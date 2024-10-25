@@ -392,6 +392,7 @@ export class CalendarEventWhoModel {
 				status: a.status as CalendarAttendeeStatus,
 				type: RecipientType.UNKNOWN,
 				contact: null,
+				verified: false,
 			}
 		}
 	}
