@@ -31,6 +31,7 @@ import { tutanota75 } from "./migrations/tutanota-v75.js"
 import { sys111 } from "./migrations/sys-v111.js"
 import { tutanota76 } from "./migrations/tutanota-v76.js"
 import { sys112 } from "./migrations/sys-v112.js"
+import { offline2 } from "./migrations/offline-v2"
 
 export interface OfflineMigration {
 	readonly app: VersionMetadataBaseKey
@@ -74,9 +75,10 @@ export const OFFLINE_STORAGE_MIGRATIONS: ReadonlyArray<OfflineMigration> = [
 	sys111,
 	tutanota76,
 	sys112,
+	offline2,
 ]
 
-const CURRENT_OFFLINE_VERSION = 1
+const CURRENT_OFFLINE_VERSION = 2
 
 /**
  * Migrator for the offline storage between different versions of model. It is tightly couples to the versions of API entities: every time we make an
