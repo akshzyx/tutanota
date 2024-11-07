@@ -87,3 +87,13 @@ explicit_iter_loop = "warn"
 name = "create_session"
 path = "examples/create_session.rs"
 required-features = ["net"]
+
+[[example]]
+name = "get_default_folders"
+path = "examples/get_default_folders.rs"
+required-features = ["net"]
+
+[[example]]
+name = "http_request"
+path = "examples/http_request.rs"
+required-features = ["net"]

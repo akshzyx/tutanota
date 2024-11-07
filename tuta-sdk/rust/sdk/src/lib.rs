@@ -15,7 +15,7 @@ use crate::blobs::blob_facade::BlobFacade;
 use crate::crypto::crypto_facade::create_auth_verifier;
 #[cfg_attr(test, mockall_double::double)]
 use crate::crypto::crypto_facade::CryptoFacade;
-use crate::crypto::key::GenericAesKey;
+use crate::crypto::key::{GenericAesKey, VersionedAesKey};
 use crate::crypto::randomizer_facade::RandomizerFacade;
 use crate::crypto::{aes::Iv, Aes256Key};
 #[cfg_attr(test, mockall_double::double)]
@@ -46,8 +46,7 @@ use crate::type_model_provider::{init_type_model_provider, AppName, TypeModelPro
 use crate::typed_entity_client::TypedEntityClient;
 #[cfg_attr(test, mockall_double::double)]
 use crate::user_facade::UserFacade;
-use rest_client::RestClient;
-use rest_client::RestClientError;
+use rest_client::{RestClient, RestClientError};
 
 pub mod crypto;
 mod crypto_entity_client;
@@ -117,7 +116,6 @@ impl Display for TypeRef {
 }
 
 pub struct HeadersProvider {
-	// In the future we might need to make this one optional to support "not authenticated" state
 	access_token: Option<String>,
 }
 
@@ -345,6 +343,26 @@ pub struct LoggedInSdk {
 	typed_entity_client: Arc<TypedEntityClient>,
 	crypto_entity_client: Arc<CryptoEntityClient>,
 	blob_facade: Arc<BlobFacade>,
+}
+
+impl LoggedInSdk {
+	#[must_use]
+	pub fn get_service_executor(&self) -> &Arc<ResolvingServiceExecutor> {
+		&self.service_executor
+	}
+
+	pub async fn get_current_sym_group_key(
+		&self,
+		user_group_id: &GeneratedId,
+	) -> Result<VersionedAesKey, ApiCallError> {
+		self.crypto_entity_client
+			.get_crypto_facade()
+			.get_key_loader_facade()
+			.as_ref()
+			.get_current_sym_group_key(user_group_id)
+			.await
+			.map_err(|err| ApiCallError::internal(format!("KeyLoadError: {err:?}")))
+	}
 }
 
 #[uniffi::export]
