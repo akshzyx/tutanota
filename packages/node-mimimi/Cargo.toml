@@ -16,7 +16,7 @@ strip = "symbols"
 tuta-sdk = { path = "../../tuta-sdk/rust/sdk", features = ["net"] }
 async-trait = "0.1.83"
 rand = { version = "0.8.5" }
-mail-parser = { version = "0.9.4" }
+mail-parser = { version = "0.9.4", features = ["full_encoding"] }
 thiserror = { version = "1.0.64" }
 # Default enable napi4 feature, see https://nodejs.org/api/n-api.html#node-api-version-matrix
 napi = { version = "2.16.12", default-features = false, features = ["napi9", "async", "tokio_rt"] }

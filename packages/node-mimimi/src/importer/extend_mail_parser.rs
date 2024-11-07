@@ -82,7 +82,7 @@ impl<'a> MakeString for mail_parser::DateTime {
 			"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec",
 		];
 
-		let weekday = DAY_OF_WEEK[self.day_of_week() as usize - 1];
+		let weekday = DAY_OF_WEEK[self.day_of_week() as usize];
 		let Self {
 			year,
 			month,

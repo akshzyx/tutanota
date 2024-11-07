@@ -8,10 +8,10 @@ use regex::Regex;
 /// 3. **escapes** "&" with "&amp;", "<" with "&lt;", and ">" with "&gt;"
 ///
 /// This code is ported from tutadb PlainTextToHtmlConverter
-pub fn plain_text_to_html(plain_text: String) -> String {
+pub fn plain_text_to_html(plain_text: &str) -> String {
 	let mut result: String = String::from("");
 	let SEPARATOR: Regex = Regex::new("\r?\n").expect("invalid regex"); // todo! move to const
-	let lines = SEPARATOR.split(plain_text.as_str());
+	let lines = SEPARATOR.split(plain_text);
 	let mut previous_quote_level = 0;
 	for (i, line) in lines.enumerate() {
 		let line_quote_level = get_line_quote_level(line.to_string());
@@ -108,41 +108,41 @@ mod test {
 	#[test]
 	pub fn convert_to_html() {
 		assert_eq!("Test-Mail im Plain-Text und mit komischen Zeichen: &amp; \"~öä⥣Ի³@<br>weiter gehts in der naechsten Zeile",
-                   plain_text_to_html("Test-Mail im Plain-Text und mit komischen Zeichen: & \"~öä⥣Ի³@\r\nweiter gehts in der naechsten Zeile".to_string()));
+                   plain_text_to_html("Test-Mail im Plain-Text und mit komischen Zeichen: & \"~öä⥣Ի³@\r\nweiter gehts in der naechsten Zeile"));
 
 		assert_eq!(
 			"<blockquote>simple blockquote</blockquote>",
-			plain_text_to_html("> simple blockquote".to_string())
+			plain_text_to_html("> simple blockquote")
 		);
 
 		assert_eq!(
 			"<blockquote>blockquote <br>with line break</blockquote>",
-			plain_text_to_html("> blockquote \r\n> with line break".to_string())
+			plain_text_to_html("> blockquote \r\n> with line break")
 		);
 
 		assert_eq!(
 			"<blockquote><blockquote>blockquote </blockquote>with line break</blockquote>",
-			plain_text_to_html(">> blockquote \r\n> with line break".to_string())
+			plain_text_to_html(">> blockquote \r\n> with line break")
 		);
 
 		assert_eq!(
 			"<blockquote>blockquote <blockquote>with line break</blockquote></blockquote>",
-			plain_text_to_html("> blockquote \r\n>> with line break".to_string())
+			plain_text_to_html("> blockquote \r\n>> with line break")
 		);
 
 		assert_eq!("<blockquote><blockquote><blockquote>blockquote </blockquote></blockquote></blockquote> with line break",
-                   plain_text_to_html(">>> blockquote \r\n with line break".to_string()));
+                   plain_text_to_html(">>> blockquote \r\n with line break"));
 
 		// quote without text
 		assert_eq!(
 			"<blockquote></blockquote>",
-			plain_text_to_html(">".to_string())
+			plain_text_to_html(">")
 		);
 
 		// quote without text but newline
 		assert_eq!(
 			"<blockquote><br></blockquote>",
-			plain_text_to_html(">\r\n>".to_string())
+			plain_text_to_html(">\r\n>")
 		);
 	}
 
