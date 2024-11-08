@@ -782,6 +782,7 @@ fn plain_body_text_parts_are_converted_to_html_body_parts_if_html_body_parts_fol
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
@@ -800,54 +801,106 @@ Abc, die Katze liegt im Schnee ! äöü?ß !
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn attachment_with_non_ascii_name() {
-	let msg = r#"
+	let msg = r#"Subject: text attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: " + new MailDateFormat().format(date) + "
+Content-type: text/plain; charset=UTF-8; name=\"=?ISO-8859-1?Q?a=F6i=2Epdf?=\"
+Content-Disposition: attachment; filename*=ISO-8859-1''%61%F6%69%2E%70%64%66
 
-"#;
+Abc, die Katze liegt im Schnee ! äöü?ß ! "#;
 	let m: ImportableMail = parse_mail(msg);
 
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn attachment_filename_in_content_type() {
-	let msg = r#"
+	let msg = r#"Subject: message with named file attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: application/octet-stream; name=indirectly_attached.txt;
+Content-Transfer-Encoding: base64
 
-"#;
+Zmlyc3QgYXR0YWNobWVudA=="#;
 	let m: ImportableMail = parse_mail(msg);
 
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn attachment_filename_qencoding() {
-	let msg = r#"
+	let msg = r#"Subject: message with named file attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: " + new MailDateFormat().format(date) + "
+Content-type: application/octet-stream; name==?utf-8?Q?=C3=A4=C3=B6=C3=9F=E2=82=AC.txt?=;
+Content-Transfer-Encoding: base64
 
-"#;
+Zmlyc3QgYXR0YWNobWVudA=="#;
 	let m: ImportableMail = parse_mail(msg);
 
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn encrypted() {
-	let msg = r#"
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: multipart/encrypted; boundary=frontier
 
-"#;
+--frontier
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+SGFsbG8=
+--frontier--"#;
 	let m: ImportableMail = parse_mail(msg);
 
 	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
 	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
+}
+
+#[test]
+fn recipient_groups() {
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: foo:a@b.example.de,c@d.example.de,e@f.example.de;
+Reply-To: ??? <???@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
+}
+
+#[test]
+fn undisclosed_recipients() {
+	let msg = r#"To: undisclosed-recipients:;"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert!(m.to_addresses.is_empty());
 }
 
 #[test]
@@ -863,39 +916,20 @@ fn can_map_to_all_header_value() {
 }
 
 #[test]
-fn recipient_groups() {
-	let msg = r#"
-
-"#;
-	let m: ImportableMail = parse_mail(msg);
-
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-}
-
-#[test]
-fn undisclosed_recipients() {
-	let msg = r#"
-
-"#;
-	let m: ImportableMail = parse_mail(msg);
-
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-}
-
-#[test]
 fn long_content_type() {
-	let msg = r#"
+	let msg = r#"From: A <a@tutanota.de>
+Content-type: multipart/mixed; boundary=frontier
 
+--frontier
+Content-Type: text/plain; charset=us-ascii; name=withoutContentType.pdf
+Content-Disposition: attachment; filename=withoutContentType.pdf;
+
+Message
+--frontier--
 "#;
 	let m: ImportableMail = parse_mail(msg);
 
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
@@ -918,37 +952,53 @@ fn get_spf_result() {
 #[test]
 fn mail_from_with_delemiter() {
 	let msg = r#"
+Message-ID: 123456
+Subject: Hello
+From: A,B <a@external.de>
+To: B <b@tutanota.de>
+References: <sadf@tutanota.de> <1234564@web.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
 
+--frontier
 "#;
 	let m: ImportableMail = parse_mail(msg);
 
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn incomplete_text_content_type() {
 	let msg = r#"
+Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text
 
+any body text
+
+
+--frontier
 "#;
 	let m: ImportableMail = parse_mail(msg);
 
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
 fn calendar_content_type() {
-	let msg = r#"
-
+	let msg = r#"Message-ID: 123456
+Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+References: <sadf@tutanota.de> <1234564@web.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: text/calendar; charset=\"UTF-8\"; method=REQUEST
 "#;
 	let m: ImportableMail = parse_mail(msg);
 
-	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
