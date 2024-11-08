@@ -18,11 +18,9 @@ use tutasdk::{IdTupleGenerated, LoggedInSdk, Sdk};
 
 pub type NapiTokioMutex<T> = napi::tokio::sync::Mutex<T>;
 
-pub mod extend_mail_parser;
 pub mod file_reader;
 pub mod imap_reader;
 mod importable_mail;
-mod plain_text_to_html_converter;
 
 #[derive(Clone, PartialEq)]
 pub enum ImportParams {

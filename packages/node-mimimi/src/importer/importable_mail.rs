@@ -1,16 +1,18 @@
-use crate::importer::extend_mail_parser::{get_reply_type_from_headers, MakeString};
-use crate::importer::plain_text_to_html_converter;
 use crate::tuta_imap::client::types::ImapMail;
-use mail_parser::{Address, GetHeader, HeaderName, HeaderValue, MessageParser, MimeHeaders, PartType};
+use extend_mail_parser::MakeString;
+use mail_parser::{
+	Address, GetHeader, HeaderName, HeaderValue, MessageParser, MessagePart, MessagePartId,
+	MimeHeaders, PartType,
+};
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::hash::Hash;
+use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
 use tutasdk::date::DateTime;
 use tutasdk::entities::generated::tutanota::{
-    EncryptedMailAddress, ImportMailData, ImportMailDataMailReference, MailAddress, Recipients,
+	EncryptedMailAddress, ImportMailData, ImportMailDataMailReference, MailAddress, Recipients,
 };
-use tutasdk::CustomId;
+pub mod extend_mail_parser;
+mod plain_text_to_html_converter;
 
 // todo: this is used for DataTransferType, so id really dont have to be unique,
 // but have to be valid length
@@ -18,147 +20,147 @@ const FIXED_CUSTOM_ID: &str = "____";
 
 #[derive(Default)]
 #[cfg_attr(test, derive(PartialEq, Debug))]
-enum MailState {
-    #[default]
-    Received = 2,
-    Sent = 1,
-    Draft = 0,
+pub(super) enum MailState {
+	#[default]
+	Received = 2,
+	Sent = 1,
+	Draft = 0,
 }
 
 #[repr(i64)]
 #[derive(Default)]
 #[cfg_attr(test, derive(PartialEq, Debug))]
-enum ICalType {
-    #[default]
-    Nothing = 0,
-    ICalPublish = 1,
-    ICalRequest = 2,
-    ICalAdd = 3,
-    ICalCancel = 4,
-    ICalRefresh = 5,
-    ICalCounter = 6,
-    ICalDeclineCounter = 7,
+pub(super) enum ICalType {
+	#[default]
+	Nothing = 0,
+	ICalPublish = 1,
+	ICalRequest = 2,
+	ICalAdd = 3,
+	ICalCancel = 4,
+	ICalRefresh = 5,
+	ICalCounter = 6,
+	ICalDeclineCounter = 7,
 }
 
 #[derive(Default)]
 #[cfg_attr(test, derive(PartialEq, Debug))]
 pub(super) enum ReplyType {
-    #[default]
-    Nothing = 0,
-    Reply = 1,
-    Forward = 2,
-    ReplyForward = 3,
+	#[default]
+	Nothing = 0,
+	Reply = 1,
+	Forward = 2,
+	ReplyForward = 3,
 }
 
 #[cfg_attr(test, derive(PartialEq, Debug))]
-enum ImportableMailAttachment {
-    Attachment {
-        filename: Option<String>,
-        content_type: String,
-        content_id: String,
-        content: Vec<u8>,
-        is_inline: bool,
-    },
-    AttachedMessage {
-        message: ImportableMail,
-    },
+pub(super) enum ImportableMailAttachment {
+	Attachment {
+		filename: Option<String>,
+		content_type: String,
+		content_id: String,
+		content: Vec<u8>,
+		is_inline: bool,
+	},
+	AttachedMessage {
+		message: ImportableMail,
+	},
 }
 
 #[cfg_attr(test, derive(PartialEq, Debug))]
-enum BodyText {
-    Html(String),
-    Plain(String),
+pub(super) enum BodyText {
+	Html(String),
+	Plain(String),
 }
 
 #[derive(Default, PartialEq)]
 #[cfg_attr(test, derive(Debug))]
-pub struct MailContact {
-    pub mail_address: String,
-    pub name: String,
+pub(super) struct MailContact {
+	pub mail_address: String,
+	pub name: String,
 }
 
 impl<'a> From<mail_parser::Addr<'a>> for MailContact {
-    fn from(value: mail_parser::Addr) -> Self {
-        Self {
-            name: value.name.unwrap_or_default().to_string(),
-            mail_address: value.address.unwrap_or_default().to_string(),
-        }
-    }
+	fn from(value: mail_parser::Addr) -> Self {
+		Self {
+			name: value.name.unwrap_or_default().to_string(),
+			mail_address: value.address.unwrap_or_default().to_string(),
+		}
+	}
 }
 
 impl From<MailContact> for MailAddress {
-    fn from(value: MailContact) -> Self {
-        Self {
-            _id: None,
-            address: value.mail_address,
-            name: value.name,
-            contact: None,
-            _finalIvs: Default::default(),
-        }
-    }
+	fn from(value: MailContact) -> Self {
+		Self {
+			_id: None,
+			address: value.mail_address,
+			name: value.name,
+			contact: None,
+			_finalIvs: Default::default(),
+		}
+	}
 }
 
 /// Input data for mail import service
 #[cfg_attr(test, derive(PartialEq, Debug))]
 pub struct ImportableMail {
-    pub headers_string: String,
-    pub subject: String,
-    pub html_body_text: String,
-    pub attachments: Vec<ImportableMailAttachment>,
+	pub(super) headers_string: String,
+	pub(super) subject: String,
+	pub(super) html_body_text: String,
+	pub(super) attachments: Vec<ImportableMailAttachment>,
 
-    pub date: Option<DateTime>,
+	pub(super) date: Option<DateTime>,
 
-    pub different_envelope_sender: Option<String>,
-    pub from_addresses: Vec<MailContact>,
-    pub to_addresses: Vec<MailContact>,
-    pub cc_addresses: Vec<MailContact>,
-    pub bcc_addresses: Vec<MailContact>,
-    pub reply_to_addresses: Vec<MailContact>,
+	pub(super) different_envelope_sender: Option<String>,
+	pub(super) from_addresses: Vec<MailContact>,
+	pub(super) to_addresses: Vec<MailContact>,
+	pub(super) cc_addresses: Vec<MailContact>,
+	pub(super) bcc_addresses: Vec<MailContact>,
+	pub(super) reply_to_addresses: Vec<MailContact>,
 
-    pub ical_type: ICalType,
-    pub reply_type: ReplyType,
+	pub(super) ical_type: ICalType,
+	pub(super) reply_type: ReplyType,
 
-    pub mail_state: MailState,
-    pub is_phishing: bool, // https://turbo.fish/::%3Cphising%3E
-    pub unread: bool,
+	pub(super) mail_state: MailState,
+	pub(super) is_phishing: bool, // https://turbo.fish/::%3Cphising%3E
+	pub(super) unread: bool,
 
-    pub message_id: Option<String>,
-    pub in_reply_to: Option<String>,
-    pub references: Vec<String>,
+	pub(super) message_id: Option<String>,
+	pub(super) in_reply_to: Option<String>,
+	pub(super) references: Vec<String>,
 }
 
 impl ImportableMail {
-    /// Utility function to convert mail_parser::Address
-    /// to a list of tutasdk::MailAddress
-    /// in such a way that every address must have mail-address and optional name
-    ///
-    /// returns None, if any of the address have empty mail-address
-    ///
-    /// set the _id: of all mail address to random 4-byte long customId,
-    /// this will only be valid in dataTransferType context
-    fn map_to_tuta_mail_address(mail_parser_addresses: Cow<Address>) -> Vec<MailContact> {
-        let address_list = match mail_parser_addresses.as_ref() {
-            Address::List(address_list) => Cow::Borrowed(address_list),
-            Address::Group(group_senders) => {
-                let group_addresses = group_senders
-                    .iter()
-                    .map(|group| group.addresses.as_slice())
-                    .collect::<Vec<_>>()
-                    .concat();
+	/// Utility function to convert mail_parser::Address
+	/// to a list of tutasdk::MailAddress
+	/// in such a way that every address must have mail-address and optional name
+	///
+	/// returns None, if any of the address have empty mail-address
+	///
+	/// set the _id: of all mail address to random 4-byte long customId,
+	/// this will only be valid in dataTransferType context
+	fn map_to_tuta_mail_address(mail_parser_addresses: Cow<Address>) -> Vec<MailContact> {
+		let address_list = match mail_parser_addresses.as_ref() {
+			Address::List(address_list) => Cow::Borrowed(address_list),
+			Address::Group(group_senders) => {
+				let group_addresses = group_senders
+					.iter()
+					.map(|group| group.addresses.as_slice())
+					.collect::<Vec<_>>()
+					.concat();
 
-                Cow::Owned(group_addresses)
-            }
-        };
+				Cow::Owned(group_addresses)
+			},
+		};
 
-        address_list
-            .as_ref()
-            .into_iter()
-            .map(|address| MailContact {
-                mail_address: address.address().unwrap_or_default().to_string(),
-                name: address.name().unwrap_or_default().to_string(),
-            })
-            .collect()
-    }
+		address_list
+			.as_ref()
+			.into_iter()
+			.map(|address| MailContact {
+				mail_address: address.address().unwrap_or_default().to_string(),
+				name: address.name().unwrap_or_default().to_string(),
+			})
+			.collect()
+	}
 
 	fn handle_plain_text(email_body_as_html: &mut String, plain_text: &str) {
 		let plain_text_as_html = plain_text_to_html_converter::plain_text_to_html(plain_text);
@@ -181,48 +183,43 @@ impl ImportableMail {
 		Ok(())
 	}
 
-    // from the parsed message
-    // return :
-    // .0 a single string that ca be display as email in html format
-    // .1 list of attachment found
-    fn process_all_parts(
-        parsed_message: &mail_parser::Message,
-    ) -> Result<(String, Vec<ImportableMailAttachment>), MailParseError> {
-        let mut email_body_as_html = String::new();
-        let mut attachments = Vec::with_capacity(parsed_message.attachments.len());
+	// from the parsed message
+	// return :
+	// .0 a single string that ca be display as email in html format
+	// .1 list of attachment found
+	fn process_all_parts(
+		parsed_message: &mail_parser::Message,
+	) -> Result<(String, Vec<ImportableMailAttachment>), MailParseError> {
+		let mut email_body_as_html = String::new();
+		let mut attachments = Vec::with_capacity(parsed_message.attachments.len());
+
+		// all the alternative of multipart/alternative that we chose not to include
+		let mut multipart_ignored_alternative = HashSet::new();
 
 		for (part_id, part) in parsed_message.parts.iter().enumerate() {
+			if multipart_ignored_alternative.contains(&part_id) {
+				continue;
+			}
+
 			// if not boundary attribute is defined in Content-Type, then the text is treated as comment.
 			// see: russian.msg
 			let probably_unbounded_message =
 				parsed_message.attachments.contains(&part_id) && part_id == 0;
 
-            match &part.body {
+			match &part.body {
 				PartType::Html(_) | PartType::Text(_) if probably_unbounded_message => {
 					// is this a comment in mime?
 					continue;
 				},
 
-                PartType::Text(text) => {
-					Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
-				},
-
-                PartType::Html(html_text) => {
-					Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
-				},
-
-                PartType::Message(attached_message) => {
-                    Self::handle_attached_message(&mut attachments, attached_message.to_owned())?;
-				}
-
-                PartType::Binary(binary_content) | PartType::InlineBinary(binary_content) => {
-                    let is_inline = if matches!(part.body, PartType::InlineBinary(_)) {
-                        true
-                    } else if matches!(part.body, PartType::Binary(_)) {
-                        false
-                    } else {
-                        unreachable!();
-                    };
+				PartType::Binary(binary_content) | PartType::InlineBinary(binary_content) => {
+					let is_inline = if matches!(part.body, PartType::InlineBinary(_)) {
+						true
+					} else if matches!(part.body, PartType::Binary(_)) {
+						false
+					} else {
+						unreachable!();
+					};
 					Self::handle_binary(
 						&mut attachments,
 						&part.headers,
@@ -231,13 +228,166 @@ impl ImportableMail {
 					);
 				},
 
-				PartType::Multipart(multi_part_msg) => {
-					continue;
+				// todo: of it is PartType::Text & PartType::Html, check for ConentDisposition Header
+				// and if it is attachment, treat it as attachment
+				PartType::Text(text) => {
+					let is_text_plain = part
+						.content_type()
+						.map(|content_type| {
+							let subtype = content_type.subtype().unwrap_or({
+								// what do we do with the content-type: text
+								// with no subtype
+								// for now assume plain
+								if content_type.c_type == "text" {
+									"plain"
+								} else {
+									""
+								}
+							});
+
+							let is_text_plain = content_type.c_type == "text" && subtype == "plain";
+							// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+							// subtype of the multipart Content-Type.
+							// This type is syntactically identical to multipart/mixed, but the
+							// semantics are different. In particular, in a digest, the default
+							// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
+							let is_message_rfc822 =
+								content_type.c_type == "message" && subtype == "rfc833";
+
+							is_text_plain || is_message_rfc822
+						})
+						.unwrap_or({
+							// what should we treat text that is not content-Type: text?
+							// fow now let's assume it's content-type: text/plain
+							true
+						});
+
+					if is_text_plain {
+						Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
+					} else {
+						Self::handle_binary(
+							&mut attachments,
+							&part.headers,
+							text.as_bytes().to_vec(),
+							false,
+						);
+					}
+				},
+
+				PartType::Html(html_text) => {
+					Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
+				},
+
+				PartType::Message(attached_message) => {
+					Self::handle_attached_message(&mut attachments, attached_message.to_owned())?;
+				},
+
+				PartType::Multipart(multi_part_ids) => {
+					Self::handle_multipart(
+						parsed_message,
+						&mut multipart_ignored_alternative,
+						part,
+						multi_part_ids,
+					);
 				},
 			}
 		}
 
 		Ok((email_body_as_html, attachments))
+	}
+
+	fn handle_multipart(
+		parsed_message: &mail_parser::Message,
+		multipart_ignored_alternative: &mut HashSet<MessagePartId>,
+		part: &MessagePart,
+		multi_part_ids: &Vec<MessagePartId>,
+	) {
+		let is_multipart_alternative = part
+			.content_type()
+			.map(|content_type| {
+				assert_eq!(
+					"multipart", content_type.c_type,
+					"Multipart is not multipart?"
+				);
+				content_type.subtype() == Some("alternative")
+			})
+			.unwrap_or_default();
+
+		if !is_multipart_alternative {
+			// we can only take care of multipart/alternative
+			// what to do for other multipart/*
+			return;
+
+			// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+			// The primary subtype for multipart, "mixed", is intended for use when the body parts
+			// are independent and intended to be displayed serially. Any multipart subtypes that
+			// an implementation does not recognize should be treated as being of subtype "mixed".
+		}
+
+		let mut best_alternative_yet = None;
+		for multipart_id in multi_part_ids {
+			// if this part was already ignored,
+			if multipart_ignored_alternative.contains(multipart_id) {
+				continue;
+			}
+
+			let alternative_part = parsed_message
+				.part(*multipart_id)
+				.expect("Expected multipart part to be there?");
+
+			// for now, we can only decide between alternative between text/plain and text/html
+			let alternative_content_type = alternative_part
+				.content_type()
+				.expect("All multipart alternative should have a Content-Type header");
+
+			// todo: handle other content type. example: choosing one image from list of alternatives?
+			let is_text_plain = alternative_content_type.c_type == "text"
+				&& alternative_content_type.subtype() == Some("plain");
+			let is_text_html = alternative_content_type.c_type == "text"
+				&& alternative_content_type.subtype() == Some("html");
+
+			if is_text_plain {
+				// always ignore plain. we can display html everytime
+				multipart_ignored_alternative.insert(*multipart_id);
+			} else if is_text_html {
+				// if we found a html, this is what we will select.
+				// if we had found and html already, we will still choose the new one.
+				// and insert the last one to ignored list
+				if let Some(last_choice) = best_alternative_yet {
+					multipart_ignored_alternative.insert(last_choice);
+				}
+				best_alternative_yet = Some(*multipart_id);
+			} else {
+				// "Can only choose multipart/alternative between text/plain and text/html"
+				// todo: this is not a good case
+				if let Some(last_choice) = best_alternative_yet {
+					multipart_ignored_alternative.insert(last_choice);
+				}
+				best_alternative_yet = Some(*multipart_id);
+			}
+		}
+
+		// if we did not find any alternative, we will take the last one,
+		// don't have to do anything with chosen multipart,
+		// it will anyway be included in next iteration
+		if best_alternative_yet.is_none() {
+			let last_choice = multi_part_ids
+				.last()
+				.expect("Wait. how can i choose between empty sets of alternatives?");
+
+			// do we remove the last_choice from ignored list?
+			// the problem is:
+			// will the same alternative part can be referenced by multiple multipart block?
+			// if so, if we remove last_choice now, and this was also ignored by another multipart,
+			// we will display it anyhow. probably this is right, right?
+			assert!(
+				multipart_ignored_alternative.remove(last_choice),
+				"if we did not put last_choice in ignore list. why best_alternative_yet is none?"
+			);
+		}
+
+		// ps: we assume that the order is:
+		// multipart block should always come before all it's alternative
 	}
 
 	fn handle_binary<'a>(
@@ -289,1001 +439,264 @@ impl ImportableMail {
 			content,
 		};
 		attachments.push(this_attachment);
-    }
+	}
 }
 
 impl From<ImportableMail> for ImportMailData {
-    fn from(importable_mail: ImportableMail) -> Self {
-        let ImportableMail {
-            headers_string: headers,
-            subject,
-            html_body_text,
-            different_envelope_sender,
-            from_addresses,
-            cc_addresses,
-            bcc_addresses,
-            to_addresses,
-            date,
-            reply_to_addresses,
-            ical_type,
-            reply_type,
-            mail_state,
-            is_phishing,
-            unread,
-            message_id,
-            in_reply_to,
-            references,
-            attachments,
-        } = importable_mail;
+	fn from(importable_mail: ImportableMail) -> Self {
+		let ImportableMail {
+			headers_string: headers,
+			subject,
+			html_body_text,
+			different_envelope_sender,
+			from_addresses,
+			cc_addresses,
+			bcc_addresses,
+			to_addresses,
+			date,
+			reply_to_addresses,
+			ical_type,
+			reply_type,
+			mail_state,
+			is_phishing,
+			unread,
+			message_id,
+			in_reply_to,
+			references,
+			attachments,
+		} = importable_mail;
 
-        let date = date.unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
+		let date = date.unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
 
-        let reply_tos = reply_to_addresses
-            .into_iter()
-            .map(|reply_to| EncryptedMailAddress {
-                _id: Some(CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-                _finalIvs: Default::default(),
-                name: reply_to.name,
-                address: reply_to.mail_address,
-            })
-            .collect();
+		let reply_tos = reply_to_addresses
+			.into_iter()
+			.map(|reply_to| EncryptedMailAddress {
+				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+				_finalIvs: Default::default(),
+				name: reply_to.name,
+				address: reply_to.mail_address,
+			})
+			.collect();
 
-        let bcc_addresses = bcc_addresses.into_iter().map(Into::into).collect();
-        let cc_addresses = cc_addresses.into_iter().map(Into::into).collect();
-        let to_addresses = to_addresses.into_iter().map(Into::into).collect();
-        let from_addresses: Vec<MailAddress> = from_addresses.into_iter().map(Into::into).collect();
+		let bcc_addresses = bcc_addresses.into_iter().map(Into::into).collect();
+		let cc_addresses = cc_addresses.into_iter().map(Into::into).collect();
+		let to_addresses = to_addresses.into_iter().map(Into::into).collect();
+		let from_addresses: Vec<MailAddress> = from_addresses.into_iter().map(Into::into).collect();
 
-        let references = references
-            .into_iter()
-            .map(|reference| ImportMailDataMailReference {
-                _id: Some(CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-                reference,
-            })
-            .collect();
+		let references = references
+			.into_iter()
+			.map(|reference| ImportMailDataMailReference {
+				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+				reference,
+			})
+			.collect();
 
-        ImportMailData {
-            _id: Some(CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-            _finalIvs: HashMap::new(),
-            compressedHeaders: headers,
-            subject,
-            compressedBodyText: html_body_text,
-            differentEnvelopeSender: different_envelope_sender,
-            sender: from_addresses
-                .first()
-                .cloned()
-                .unwrap_or(MailContact::default().into()),
-            recipients: Recipients {
-                _id: Some(CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-                bccRecipients: bcc_addresses,
-                ccRecipients: cc_addresses,
-                toRecipients: to_addresses,
-            },
-            replyTos: reply_tos,
-            unread,
-            confidential: false,
-            method: ical_type as i64,
-            phishingStatus: if is_phishing { 1 } else { 0 },
-            replyType: reply_type as i64,
-            date,
-            state: mail_state as i64,
-            messageId: message_id,
-            inReplyTo: in_reply_to,
-            references,
-            importedAttachments: vec![],
-        }
-    }
+		ImportMailData {
+			_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+			_finalIvs: HashMap::new(),
+			compressedHeaders: headers,
+			subject,
+			compressedBodyText: html_body_text,
+			differentEnvelopeSender: different_envelope_sender,
+			sender: from_addresses
+				.first()
+				.cloned()
+				.unwrap_or(MailContact::default().into()),
+			recipients: Recipients {
+				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+				bccRecipients: bcc_addresses,
+				ccRecipients: cc_addresses,
+				toRecipients: to_addresses,
+			},
+			replyTos: reply_tos,
+			unread,
+			confidential: false,
+			method: ical_type as i64,
+			phishingStatus: if is_phishing { 1 } else { 0 },
+			replyType: reply_type as i64,
+			date,
+			state: mail_state as i64,
+			messageId: message_id,
+			inReplyTo: in_reply_to,
+			references,
+			importedAttachments: vec![],
+		}
+	}
 }
 
 impl TryFrom<ImapMail> for ImportableMail {
-    type Error = MailParseError;
-    fn try_from(imap_mail: ImapMail) -> Result<Self, Self::Error> {
-        let ImapMail { rfc822_full } = imap_mail;
+	type Error = MailParseError;
+	fn try_from(imap_mail: ImapMail) -> Result<Self, Self::Error> {
+		let ImapMail { rfc822_full } = imap_mail;
 
-        // parse the full mime message
-        let imap_mail = MessageParser::new()
-            .parse(rfc822_full.as_slice())
-            .ok_or(MailParseError::InvalidMimeMessage)?;
+		// parse the full mime message
+		let imap_mail = MessageParser::new()
+			.parse(rfc822_full.as_slice())
+			.ok_or(MailParseError::InvalidMimeMessage)?;
 
-        let mut importable_mail = Self::try_from(imap_mail)?;
+		let mut importable_mail = Self::try_from(imap_mail)?;
 
-        // example:
-        // add more details from imap if given,
-        importable_mail.is_phishing = false;
-        importable_mail.unread = true;
+		// example:
+		// add more details from imap if given,
+		importable_mail.is_phishing = false;
+		importable_mail.unread = true;
 
-        Ok(importable_mail)
-    }
+		Ok(importable_mail)
+	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MailParseError {
-    InconsistentParts(&'static str),
-    NoSentDate,
-    NoRecipient,
-    NoFrom,
-    InvalidDate,
-    InvalidHtmlBody,
-    InvalidTextBody,
-    InvalidMimeMessage,
-    EmptyMailAddress,
-    Unknown(String),
+	InconsistentParts(&'static str),
+	NoSentDate,
+	NoRecipient,
+	NoFrom,
+	InvalidDate,
+	InvalidHtmlBody,
+	InvalidTextBody,
+	InvalidMimeMessage,
+	EmptyMailAddress,
+	Unknown(String),
 }
 
 /// allow to convert from parsed message
 impl<'x> TryFrom<mail_parser::Message<'x>> for ImportableMail {
-    type Error = MailParseError;
-
-    fn try_from(parsed_message: mail_parser::Message) -> Result<Self, Self::Error> {
-        let subject = parsed_message.subject().unwrap_or_default().to_string();
-
-        let (html_body_text, attachments) = ImportableMail::process_all_parts(&parsed_message)?;
-
-        let date = parsed_message
-            .date()
-            .as_ref()
-            .map(|date_time| DateTime::from_millis(date_time.to_timestamp() as u64 * 1000));
-
-        let from_addresses = ImportableMail::map_to_tuta_mail_address(
-            parsed_message.from().map(Cow::Borrowed).unwrap_or_else(|| {
-                parsed_message
-                    .sender()
-                    .map(Cow::Borrowed)
-                    .unwrap_or_else(|| Cow::Owned(mail_parser::Address::List(vec![])))
-            }),
-        )
-            .into_iter()
-            .map(|mut address| {
-                // we currently use the name as address if no address was defined on server side
-                if address.mail_address.is_empty() {
-                    address.mail_address = address.name;
-                    address.name = String::new();
-                }
-                address
-            })
-            .collect::<Vec<_>>();
-
-        let different_envelope_sender = parsed_message
-            .sender()
-            .map(|sender| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(sender)))
-            // sender is allowed to be empty
-            .unwrap_or_default()
-            // there should only be one different envelope sender
-            .pop()
-            .map(|mut address| {
-                // we currently use the name as address if no address was defined on server side
-                if address.mail_address.is_empty() {
-                    address.mail_address = address.name;
-                    address.name = String::new();
-                }
-                address
-            })
-            // different envelope sender should not contain address listed in from_addresses;
-            .filter(|diff_sender| {
-                from_addresses
-                    .iter()
-                    .filter(|from| from.mail_address != diff_sender.mail_address)
-                    .next()
-                    .is_some()
-            })
-            .map(|mail_address| mail_address.mail_address);
-
-        let to_addresses = parsed_message
-            .to()
-            .map(|to| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(to)))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|address| !address.mail_address.trim().is_empty())
-            .collect();
-
-        let cc_addresses = parsed_message
-            .cc()
-            .map(|cc| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(cc)))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|address| !address.mail_address.trim().is_empty())
-            .collect();
-
-        let bcc_addresses = parsed_message
-            .bcc()
-            .map(|bcc| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(bcc)))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|address| !address.mail_address.trim().is_empty())
-            .collect();
-
-        let reply_to_addresses = parsed_message
-            .reply_to()
-            .map(|reply_to| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(reply_to)))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|address| !address.mail_address.trim().is_empty())
-            .collect();
-
-        let headers_string = parsed_message
-            .headers_raw()
-            .map(|(name, value)| name.to_string() + ":" + value)
-            .collect::<Vec<_>>()
-            .join("");
-
-        let reply_type = get_reply_type_from_headers(parsed_message.headers());
-        let message_id = parsed_message.message_id().map(String::from);
-        let in_reply_to = parsed_message.in_reply_to().as_text().map(String::from);
-        let references = match parsed_message.references() {
-            HeaderValue::Text(reference) => {vec![reference.to_string()]}
-            HeaderValue::TextList(references) => {references.iter().map(|cow| cow.to_string()).collect()}
-            _ => {vec![]}
-        };
-
-        Ok(Self {
-            headers_string,
-            html_body_text,
-            subject,
-            different_envelope_sender,
-            from_addresses,
-            to_addresses,
-            cc_addresses,
-            bcc_addresses,
-            reply_to_addresses,
-            date,
-            reply_type,
-            message_id,
-            in_reply_to,
-            references,
-            attachments,
-
-            ical_type: Default::default(),
-            unread: false,
-            mail_state: Default::default(),
-            is_phishing: false,
-        })
-    }
-}
-
-// Keep in sync with MimeStringToSmtpMessageConverterTest !
-#[cfg(test)]
-mod tests {
-    use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
-    use mail_parser::{MessageParser, MessagePartId};
-    use serde::Deserialize;
-    use std::borrow::Cow;
-	use std::io::Read;
-    use tutasdk::date::DateTime;
-
-    impl From<TestMailAddress> for MailContact {
-        fn from(value: TestMailAddress) -> Self {
-            let TestMailAddress {
-                name, mail_address, ..
-            } = value;
-            Self { mail_address, name }
-        }
-    }
-
-    impl From<ExpectedMessage> for ImportableMail {
-        fn from(mut expected_message: ExpectedMessage) -> Self {
-            let mut html_body_ids: Vec<MessagePartId> = vec![];
-            let mut plain_body_ids: Vec<MessagePartId> = vec![];
-            let mut attachment_ids: Vec<MessagePartId> = vec![];
-            let mut body_parts = vec![];
-
-            expected_message.mail_headers.push_str("\n");
-            let parsed_headers_res = MessageParser::default()
-                .parse_headers(expected_message.mail_headers.as_str())
-                .unwrap();
-			let root_part = mail_parser::MessagePart {
-				headers: parsed_headers_res.headers().to_vec(),
-				is_encoding_problem: false,
-				body: mail_parser::PartType::Text(Cow::Borrowed("")),
-				encoding: Default::default(),
-				offset_header: 0,
-				offset_body: 0,
-				offset_end: 0,
-			};
-            body_parts.push(root_part);
-
-            if let Some(plain_body_part) = expected_message.plain_body_text {
-                let plain_body_converted = mail_parser::MessagePart {
-                    headers: vec![],
-                    is_encoding_problem: false,
-                    body: mail_parser::PartType::Text(Cow::Owned(plain_body_part)),
-                    encoding: Default::default(),
-                    offset_header: 0,
-                    offset_body: 0,
-                    offset_end: 0,
-                };
-                plain_body_ids.push(body_parts.len());
-                body_parts.push(plain_body_converted);
-            }
-
-            if let Some(html_body_part) = expected_message.html_body_text {
-                let html_body_converted = mail_parser::MessagePart {
-                    headers: vec![],
-                    is_encoding_problem: false,
-                    body: mail_parser::PartType::Html(Cow::Owned(html_body_part)),
-                    encoding: Default::default(),
-                    offset_header: 0,
-                    offset_body: 0,
-                    offset_end: 0,
-                };
-                html_body_ids.push(body_parts.len());
-                body_parts.push(html_body_converted);
-            }
-
-            for attached_message in expected_message.attached_messages {
-                let attached_message_converted = mail_parser::MessagePart {
-                    headers: vec![],
-                    is_encoding_problem: false,
-                    body: Default::default(),
-                    encoding: Default::default(),
-                    offset_header: 0,
-                    offset_body: 0,
-                    offset_end: 0,
-                };
-                attachment_ids.push(body_parts.len());
-                body_parts.push(attached_message_converted);
-            }
-
-            for attached_file in expected_message.attached_files {
-                let attached_file_converted = mail_parser::MessagePart {
-                    headers: vec![],
-                    is_encoding_problem: false,
-                    body: Default::default(),
-                    encoding: Default::default(),
-                    offset_header: 0,
-                    offset_body: 0,
-                    offset_end: 0,
-                };
-                attachment_ids.push(body_parts.len());
-                body_parts.push(attached_file_converted);
-            }
-
-            let parsed_mail = mail_parser::Message {
-                html_body: html_body_ids,
-                text_body: plain_body_ids,
-                attachments: attachment_ids,
-                parts: body_parts,
-                raw_message: Default::default(),
-            };
-
-            ImportableMail::try_from(parsed_mail).unwrap()
-        }
-    }
-
-    fn parseMail(msg: &str) -> ImportableMail {
-        let parsed_message = MessageParser::default()
-            .parse(msg)
-            .unwrap();
-
-        println!("{:?}", parsed_message.headers());
-        let m: ImportableMail = parsed_message.try_into().unwrap();
-        m
-    }
-
-    #[test]
-    fn headers() {
-        let msg = r#"Message-ID: 123456
-Subject: Hello
-From: A <a@tutanota.de>
-To: B <b@tutanota.de>
-Reply-To: Reply <reply@tutanota.de>, Reply2 <reply2@tutanota.de>
-References: <sadf@tutanota.de> <1234564@web.de>
-In-Reply-To: <1234564@web.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100
-Content-Type: multipart/mixed; boundary=frontier
-"#;
-        println!("{}", msg);
-        let m: ImportableMail = parseMail(msg);
-        assert_eq!("123456", m.message_id.unwrap());
-        assert_eq!(vec![
-            MailContact { name: "Reply".to_string(), mail_address: "reply@tutanota.de".to_string() },
-            MailContact { name: "Reply2".to_string(), mail_address: "reply2@tutanota.de".to_string() },
-        ], m.reply_to_addresses);
-        assert_eq!(vec!["sadf@tutanota.de".to_string(), "1234564@web.de".to_string()], m.references);
-        assert_eq!("1234564@web.de", m.in_reply_to.unwrap());
-        // assert_eq!("frontier", m.boundary);
-        assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-        assert_eq!(msg, m.headers_string);
-    }
-
-    #[test]
-    fn bad_frontier() {
-        // todo!()
-    }
-
-    #[test]
-    fn empty_references() {
-        // todo!()
-    }
-
-    #[test]
-    fn empty_in_reply_to() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_us_ascii() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_utf8bit() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_utf_explicit_8bit() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_utf_quoted_printable() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_utf_base64() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_utf_invalid_base64() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_format_flowed() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_format_flowed_del_sp() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_subject_encoded_word_Qencoding() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_plain_subject_encoded_word_Qencoding_turkish() {
-        // todo!()
-    }
-
-    #[test]
-    fn from_encoded_word_Qencoding() {
-        // todo!()
-    }
-
-    #[test]
-    fn from_encoded_word_Qencoding_colon() {
-        // todo!()
-    }
-
-    #[test]
-    fn recipients_encoded_word_Qencoding_colon() {
-        // todo!()
-    }
-
-    #[test]
-    fn recipients_encoded_word_Qencoding_partly() {
-        // todo!()
-    }
-
-
-    #[test]
-    fn text_plain_subject_encoded_word_base64() {
-        // todo!()
-    }
-
-
-    #[test]
-    fn text_html_only() {
-        // todo!()
-    }
-
-
-    #[test]
-    fn charset() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_html_inline_charset_definition_utf8() {
-        // todo!()
-    }
-
-    #[test]
-    fn text_html_inline_charset_definition_western() {
-        // todo!()
-    }
-    #[test]
-    fn text_alternative() {
-        let msg = r#"Subject: Hello
-From: A <a@tutanota.de>
-To: B <b@tutanota.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100 (CET)
-Content-Type: multipart/alternative; boundary=frontier
-
---frontier
-Content-type: text/plain; charset=UTF-8;
-
-Hello äöüß
---frontier
-Content-type: text/html; charset=UTF-8;
-
-<html><body><b><small>Hello äöüß</small></b><br></body></html>
---frontier--
-"#;
-        let m: ImportableMail = parseMail(msg);
-
-        assert_eq!(&MailContact { mail_address: "a@tutanota.de".to_string(), name: "A".to_string() }, m.from_addresses.first().unwrap());
-        assert_eq!(vec![MailContact { mail_address: "b@tutanota.de".to_string(), name: "B".to_string() }], m.to_addresses);
-        assert_eq!("Hello", m.subject);
-        assert_eq!("<html><body><b><small>Hello äöüß</small></b><br></body></html>", m.html_body_text);
-        assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-    }
-
-    #[test]
-    fn invalid_domains_in_mail_addresses() {
-        // todo!()
-    }
-
-    #[test]
-    fn multiple_to_headers() {
-        // todo!()
-    }
-
-    #[test]
-    fn attached_message() {
-        let msg = r#"Subject: parent message
-From: A <a@tutanota.de>
-To: B <b@tutanota.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100 (CET)
-Content-Type: multipart/mixed; boundary=frontier
-
---frontier
-Content-type: text/plain; charset=UTF-8;
-
-normal message
---frontier
-Content-Type: message/rfc822; charset=UTF-8;
-
-Subject: attached message
-From: D <d@tutanota.de>
-To: E <e@tutanota.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100 (CET)
-Content-type: text/plain; charset=UTF-8;
-
-Hello äöüß
-"#;
-
-        let m: ImportableMail = parseMail(msg);
-
-        // assert_eq!(&MailContact { mail_address: "a@tutanota.de".to_string(), name: "A".to_string() }, m.from_addresses.first().unwrap());
-        // assert_eq!(vec![MailContact { mail_address: "b@tutanota.de".to_string(), name: "B".to_string() }], m.to_addresses);
-        assert_eq!("parent message", m.subject);
-        assert_eq!("normal message", m.html_body_text);
-        // assert_eq!(Some(DateTime::from_millis(0)), m.date);
-
-        let attachment = m.attachments.first().unwrap();
-        match attachment {
-            ImportableMailAttachment::Attachment { .. } => {panic!("should be an attached message")}
-            ImportableMailAttachment::AttachedMessage { message } => {
-                // assert_eq!(MailContact{name: "D", mail_address: "d@tutanota.de"}, m.getSender());
-                // assert_eq!(List.of(new SmtpMailContact("E", "e@tutanota.de")), m.getToRecipients());
-                // assert_eq!("attached message", attached.getSubject());
-                // assert_eq!("Hello äöüß", attached.getPlainBodyText());
-                // assert_eq!(null, attached.getHtmlBodyText());
-                // assert_eq!(yesterday, attached.getSentDate());
-            }
-        }
-    }
-
-    #[test]
-    fn attachments() {
-        // todo!()
-    }
-
-    #[test]
-    fn inline_attachment() {
-        // todo!()
-    }
-
-    #[test]
-    fn attachment_to_attached_message() {
-        // todo!()
-    }
-
-    #[test]
-    fn textAttachment() {}
-
-
-    #[test]
-    fn htmlAttachment() {}
-
-    #[test]
-    fn multiple_plain_body_text_parts_are_concatenated() {
-        let eml_contents = r#"Message-Id: some-id
-From: A <a@example.org>
-To: B <b@example.org>
-Date: Tue, 5 Nov 2024 13:18:59 +0000
-Content-Type: multipart/mixed; boundary=line
-
---line
-Content-type: text/plain; charset=UTF-8
-
-first plain text in body
-
---line
-Content-Type: text/plain; charset=UTF-8
-
-second plain text in body
---line--
-"#;
-
-        let parsed_message = MessageParser::default()
-            .with_mime_headers()
-            .parse(eml_contents)
-            .unwrap();
-        let text_contents = parsed_message
-            .text_bodies()
-            .map(|a| a.text_contents().unwrap())
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(
-            "first plain text in body\nsecond plain text in body",
-            text_contents
-        );
-    }
-
-    #[test]
-    fn multiple_html_body_text_parts_are_concatenated() {
-        let eml_contents = r#"Message-Id: some-id
-From: A <a@example.org>
-To: B <b@example.org>
-Date: Tue, 5 Nov 2024 13:18:59 +0000
-Content-Type: multipart/mixed; boundary=line
-
---line
-Content-type: text/html; charset=UTF-8
-
-<p>first html text in body</p>
-
---line
-Content-Type: text/html; charset=UTF-8
-
-<p>second html text in body</p>
---line--
-"#;
-
-        let parsed_message = MessageParser::default()
-            .with_mime_headers()
-            .parse(eml_contents)
-            .unwrap();
-        let text_contents = parsed_message
-            .html_bodies()
-            .map(|a| a.text_contents().unwrap())
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(
-            "<p>first html text in body</p>\n<p>second html in body</p>",
-            text_contents
-        );
-    }
-
-    #[test]
-    // todo! what does this test (map)
-    fn concatenate_alternative_html_text_parts() {
-        let eml_contents = r#"Message-Id: some-id
-From: A <a@example.org>
-To: B <b@example.org>
-Date: Tue, 5 Nov 2024 13:18:59 +0000
-Content-Type: multipart/mixed; boundary=line
-
---line
-Content-type: text/plain; charset=UTF-8
-
-first plain text in body
-
---line
-Content-Type: text/html; charset=UTF-8
-
-<p>first html text in body</p>
-
---line--
-"#;
-
-        let parsed_message = MessageParser::default()
-            .with_mime_headers()
-            .parse(eml_contents)
-            .unwrap();
-        for body_part in parsed_message.html_bodies() {
-            eprintln!("=====");
-            eprintln!("{body_part:#?}");
-        }
-    }
-
-    #[test]
-    // todo! what does this test (map)
-    fn concatenate_multiple_html_and_plain_text_parts() {
-        let eml_contents = r#"Message-Id: some-id
-From: A <a@example.org>
-To: B <b@example.org>
-Date: Tue, 5 Nov 2024 13:18:59 +0000
-Content-Type: multipart/mixed; boundary=line
-
---line
-Content-type: text/html; charset=UTF-8
-
-<p>first html text in body</p>
-<img src = "https://image.rs/imag.jpeg" />
-
---line
-Content-Type: img/gif; charset=UTF-8
-Content-Disposition: inline; filename=name.txt;
-
-first plain text in body
---line--
-"#;
-
-        let parsed_message = MessageParser::default()
-            .with_mime_headers()
-            .parse(eml_contents)
-            .unwrap();
-
-        eprintln!("{:?}", parsed_message.text_body);
-        eprintln!("{:?}", parsed_message.html_body);
-        eprintln!("{:?}", parsed_message.attachments);
-
-        let text_contents = parsed_message
-            .text_bodies()
-            .map(|a| a.text_contents().unwrap())
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(
-            "<p>first html text in body</p>\nfirst plain text in body",
-            text_contents
-        );
-    }
-
-    #[test]
-    fn plain_body_text_parts_are_concatenated_with_html_body_parts_if_html_body_parts_already_existing() {
-        todo!()
-    }
-
-    #[test]
-    fn plain_body_text_parts_are_converted_to_html_body_parts_if_html_body_parts_follow_afterwards() {
-        todo!()
-    }
-
-    #[test]
-    fn text_attachment_with_disposition() {
-        todo!()
-    }
-
-    #[test]
-    fn attachment_with_non_ascii_name() {
-        todo!()
-    }
-
-    #[test]
-    fn attachment_filename_in_content_type() {
-        todo!()
-    }
-
-    #[test]
-    fn attachment_filename_qencoding() {
-        todo!()
-    }
-
-    #[test]
-    fn encrypted() {
-        todo!()
-    }
-
-    #[test]
-    fn can_map_to_all_header_value() {
-        todo!()
-    }
-
-    #[test]
-    fn recipient_groups() {
-        todo!()
-    }
-
-    #[test]
-    fn undisclosed_recipients() {
-        todo!()
-    }
-
-    #[test]
-    fn long_content_type() {
-        todo!()
-    }
-
-    #[test]
-    fn normalize_header_value() {}
-
-    #[test]
-    fn get_spf_result() {
-        // net yet used on rust
-    }
-
-    #[test]
-    fn mail_from_with_delemiter() {
-        todo!()
-    }
-
-    #[test]
-    fn incomplete_text_content_type() {
-        todo!()
-    }
-
-    #[test]
-    fn calendar_content_type() {
-        todo!()
-    }
-
-    #[test]
-    fn calendar_content_type_method() {
-        todo!()
-    }
-
-    #[test]
-    fn invalid_content_types_default_to_text_plain() {
-        todo!()
-    }
-
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct TestMailAddress {
-        name: String,
-        mail_address: String,
-        valid: bool,
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ExpectedAttachedFile {
-        name: String,
-        data: String,
-        mime_type: String,
-        charset: Option<String>,
-        content_id: String,
-        calender_method: Option<()>,
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ExpectedMessage {
-        id: Option<String>,
-        boundary: Option<String>,
-        alternative_boundary: Option<String>,
-        sender: TestMailAddress,
-        to_recipients: Vec<TestMailAddress>,
-        cc_recipients: Vec<TestMailAddress>,
-        bcc_recipients: Vec<TestMailAddress>,
-        reply_to: Vec<TestMailAddress>,
-        in_reply_to: Option<String>,
-        references: Vec<String>,
-        auto_submitted: Option<()>,
-        sent_date: Option<i64>,
-        subject: String,
-        plain_body_text: Option<String>,
-        html_body_text: Option<String>,
-        attached_messages: Vec<()>,
-        attached_files: Vec<ExpectedAttachedFile>,
-        mail_headers: String,
-        spf_result: String,
-        list_unsubscribe: bool,
-        mail_authentication_result: Option<()>,
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Exception {
-        clazz: String,
-        message: String,
-    }
-
-    #[derive(Debug, PartialEq, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct FileContent {
-        exception: Option<Exception>,
-        result: Option<ExpectedMessage>,
-    }
-
-    impl FileContent {
-        fn read_from_file(file_path: &str) -> Result<Self, String> {
-            let file_content = std::fs::read_to_string(file_path)
-                .map_err(|_| format!("Cannot read content of: {file_path}"))?;
-            serde_json::from_str::<FileContent>(file_content.as_str())
-                .map_err(|e| format!("Cannot read to valid ExpectedMessage struct. Error: {e:?}"))
-        }
-    }
-
-    #[test]
-    fn mime_tools_test_messages() {
-        const DATA_DIR: &'static str =
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test/mimetools-testmsgs");
-        let source_message_paths = std::fs::read_dir(DATA_DIR)
-            .unwrap()
-            .map(Result::unwrap)
-            .filter(|path| path.file_name().to_str().unwrap().ends_with(".msg"));
-
-        for message_path in source_message_paths {
-			let message_file_name = message_path.file_name().to_str().unwrap().to_string();
-			eprint!("File: {message_file_name}");
-
-			// let message_file_content = std::fs::r(&message_path.path()).unwrap()
-			let mut message_file_content = vec![];
-			std::fs::File::open(message_path.path())
-				.unwrap()
-				.read_to_end(&mut message_file_content)
-				.unwrap();
-            let parsed_message = MessageParser::default()
-				.parse(message_file_content.as_slice())
-                .expect(format!("Cannot parse test message: {:?}", message_path.path()).as_str());
-
-            let expected_json_file_name = format!(
-                "{DATA_DIR}/{}",
-				message_file_name.replace(".msg", "-expected.json")
-            );
-            let FileContent {
-                result: expected_result,
-                exception: expected_exception,
-            } = FileContent::read_from_file(expected_json_file_name.as_str()).unwrap();
-            let parsed_message_result = ImportableMail::try_from(parsed_message.clone());
-
-            if expected_result.is_some() && expected_exception.is_none() {
-				let mut importable_mail = parsed_message_result.unwrap();
-                let expected_importable_mail = ImportableMail::from(expected_result.unwrap());
-                importable_mail.attachments = vec![];
-				// everything else is related to multipart i suppose,
-				const IGNORED_FILES: [&str; 14] = [
-					// files i suppose related to multipart
-					"2002_06_12_doublebound.msg",
-					"attachment-filename-encoding-Latin1.msg",
-					"attachment-filename-encoding-UTF8.msg",
-					"multi-bad.msg",
-					"multi-clen.msg",
-					"multi-digest.msg",
-					"multi-igor.msg",
-					"multi-igor2.msg",
-					"multi-nested.msg",
-					"multi-nested3.msg",
-					"multi-nested2.msg",
-					"multi-digest.msg",
-					"infinite.msg",         // have encoding problem
-					"double-semicolon.msg", // do not know why this fail
-				];
-				if IGNORED_FILES
+	type Error = MailParseError;
+
+	fn try_from(parsed_message: mail_parser::Message) -> Result<Self, Self::Error> {
+		let subject = parsed_message.subject().unwrap_or_default().to_string();
+
+		let (html_body_text, attachments) = ImportableMail::process_all_parts(&parsed_message)?;
+
+		let date = parsed_message
+			.date()
+			.as_ref()
+			.map(|date_time| DateTime::from_millis(date_time.to_timestamp() as u64 * 1000));
+
+		let from_addresses = ImportableMail::map_to_tuta_mail_address(
+			parsed_message.from().map(Cow::Borrowed).unwrap_or_else(|| {
+				parsed_message
+					.sender()
+					.map(Cow::Borrowed)
+					.unwrap_or_else(|| Cow::Owned(mail_parser::Address::List(vec![])))
+			}),
+		)
+		.into_iter()
+		.map(|mut address| {
+			// we currently use the name as address if no address was defined on server side
+			if address.mail_address.is_empty() {
+				address.mail_address = address.name;
+				address.name = String::new();
+			}
+			address
+		})
+		.collect::<Vec<_>>();
+
+		let different_envelope_sender = parsed_message
+			.sender()
+			.map(|sender| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(sender)))
+			// sender is allowed to be empty
+			.unwrap_or_default()
+			// there should only be one different envelope sender
+			.pop()
+			.map(|mut address| {
+				// we currently use the name as address if no address was defined on server side
+				if address.mail_address.is_empty() {
+					address.mail_address = address.name;
+					address.name = String::new();
+				}
+				address
+			})
+			// different envelope sender should not contain address listed in from_addresses;
+			.filter(|diff_sender| {
+				from_addresses
 					.iter()
-					.filter(|f| f.starts_with(message_file_name.as_str()))
+					.filter(|from| from.mail_address != diff_sender.mail_address)
 					.next()
 					.is_some()
-				{
-					eprintln!(" ....ignored");
-					continue;
-				}
-				eprintln!();
-                assert_eq!(importable_mail, expected_importable_mail);
-            } else if expected_exception.is_some() && expected_result.is_none() {
-                // check that the parsing have failed,
-                // but we cannot check for the actual reason in `expected_exception`
-                //
-                //
-                // todo: should not badbound.msg fail on mail_parser::parse thing? why is it failing in ImportableMail::try_from()?
-                //assert!(parsed_message_result.is_err());
-				eprintln!();
-            } else if expected_result.is_none() && expected_exception.is_none() {
-                unreachable!()
-            } else if expected_exception.is_some() && expected_exception.is_some() {
-                unreachable!()
-            } else {
-                unreachable!()
-            }
-        }
-    }
+			})
+			.map(|mail_address| mail_address.mail_address);
+
+		let to_addresses = parsed_message
+			.to()
+			.map(|to| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(to)))
+			.unwrap_or_default()
+			.into_iter()
+			.filter(|address| !address.mail_address.trim().is_empty())
+			.collect();
+
+		let cc_addresses = parsed_message
+			.cc()
+			.map(|cc| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(cc)))
+			.unwrap_or_default()
+			.into_iter()
+			.filter(|address| !address.mail_address.trim().is_empty())
+			.collect();
+
+		let bcc_addresses = parsed_message
+			.bcc()
+			.map(|bcc| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(bcc)))
+			.unwrap_or_default()
+			.into_iter()
+			.filter(|address| !address.mail_address.trim().is_empty())
+			.collect();
+
+		let reply_to_addresses = parsed_message
+			.reply_to()
+			.map(|reply_to| ImportableMail::map_to_tuta_mail_address(Cow::Borrowed(reply_to)))
+			.unwrap_or_default()
+			.into_iter()
+			.filter(|address| !address.mail_address.trim().is_empty())
+			.collect();
+
+		let headers_string = parsed_message
+			.headers_raw()
+			.map(|(name, value)| name.to_string() + ":" + value)
+			.collect::<Vec<_>>()
+			.join("");
+
+		let reply_type = extend_mail_parser::get_reply_type_from_headers(parsed_message.headers());
+		let message_id = parsed_message.message_id().map(String::from);
+		let in_reply_to = parsed_message.in_reply_to().as_text().map(String::from);
+		let references = match parsed_message.references() {
+			HeaderValue::Text(reference) => {
+				vec![reference.to_string()]
+			},
+			HeaderValue::TextList(references) => {
+				references.iter().map(|cow| cow.to_string()).collect()
+			},
+			_ => {
+				vec![]
+			},
+		};
+
+		Ok(Self {
+			headers_string,
+			html_body_text,
+			subject,
+			different_envelope_sender,
+			from_addresses,
+			to_addresses,
+			cc_addresses,
+			bcc_addresses,
+			reply_to_addresses,
+			date,
+			reply_type,
+			message_id,
+			in_reply_to,
+			references,
+			attachments,
+
+			ical_type: Default::default(),
+			unread: false,
+			mail_state: Default::default(),
+			is_phishing: false,
+		})
+	}
 }
+
+#[cfg(test)]
+mod mime_string_to_importable_mail_test;
+
+#[cfg(test)]
+mod msg_file_compatibility_test;

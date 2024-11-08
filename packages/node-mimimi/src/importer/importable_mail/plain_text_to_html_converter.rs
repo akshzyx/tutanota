@@ -8,7 +8,7 @@ use regex::Regex;
 /// 3. **escapes** "&" with "&amp;", "<" with "&lt;", and ">" with "&gt;"
 ///
 /// This code is ported from tutadb PlainTextToHtmlConverter
-pub fn plain_text_to_html(plain_text: &str) -> String {
+pub(super) fn plain_text_to_html(plain_text: &str) -> String {
 	let mut result: String = String::from("");
 	let SEPARATOR: Regex = Regex::new("\r?\n").expect("invalid regex"); // todo! move to const
 	let lines = SEPARATOR.split(plain_text);
@@ -103,7 +103,9 @@ pub fn add_html_page_tags(html: String) -> String {
 }
 
 mod test {
-	use crate::importer::plain_text_to_html_converter::{add_html_page_tags, plain_text_to_html};
+	use crate::importer::importable_mail::plain_text_to_html_converter::{
+		add_html_page_tags, plain_text_to_html,
+	};
 
 	#[test]
 	pub fn convert_to_html() {
@@ -134,10 +136,7 @@ mod test {
                    plain_text_to_html(">>> blockquote \r\n with line break"));
 
 		// quote without text
-		assert_eq!(
-			"<blockquote></blockquote>",
-			plain_text_to_html(">")
-		);
+		assert_eq!("<blockquote></blockquote>", plain_text_to_html(">"));
 
 		// quote without text but newline
 		assert_eq!(

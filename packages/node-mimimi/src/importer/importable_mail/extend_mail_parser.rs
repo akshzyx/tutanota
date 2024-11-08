@@ -97,7 +97,7 @@ impl<'a> MakeString for mail_parser::DateTime {
 		let month = MONTH_OF_YEAR[*month as usize - 1];
 
 		Cow::Owned(format!(
-			"{weekday}, {day} {month} {year} {hh:02}:{mm:02}:{ss:02} +{tz_hh:02}{tz_mm:02}"
+			"{weekday}, {day:02} {month:02} {year} {hh:02}:{mm:02}:{ss:02} +{tz_hh:02}{tz_mm:02}"
 		))
 	}
 }
@@ -156,7 +156,7 @@ impl<'a> MakeString for mail_parser::ContentType<'a> {
 	}
 }
 
-pub fn make_mail_address(name: Option<&str>, address: Option<&str>) -> String {
+fn make_mail_address(name: Option<&str>, address: Option<&str>) -> String {
 	let name = name.unwrap_or_default();
 	let mut res = if name.is_empty() || name.starts_with("\"") {
 		name.to_string()
