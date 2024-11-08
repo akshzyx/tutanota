@@ -38,6 +38,11 @@ impl ser::Error for SizeEstimationError {
 	}
 }
 
+/// main serializer for all entities and their field values.
+/// there are some special-cased types that are serialized
+/// in a non-serde way (eg IdTuple struct -> vector of strings)
+/// it assumes that certain types will be encrypted and/or b64
+/// encoded.
 impl<'a> Serializer for &'a mut SizeEstimatingSerializer {
 	type Ok = usize;
 	type Error = SizeEstimationError;
@@ -247,6 +252,9 @@ impl<'a> Serializer for &'a mut SizeEstimatingSerializer {
 
 struct SizeEstimatingPlaintextSerializer;
 
+/// serializer that will not apply the encryption and encoding padding,
+/// to be used for objects that we know will not be encrypted or encoded,
+/// eg struct field names, ids.
 impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 	type Ok = usize;
 	type Error = SizeEstimationError;
@@ -258,51 +266,51 @@ impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 	type SerializeStruct = ser::Impossible<usize, SizeEstimationError>;
 	type SerializeStructVariant = ser::Impossible<usize, SizeEstimationError>;
 
-	fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
+	fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_bool")
 	}
 
-	fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
+	fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_i8")
 	}
 
-	fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
+	fn serialize_i16(self, _v: i16) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_i16")
 	}
 
-	fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
+	fn serialize_i32(self, _v: i32) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_i32")
 	}
 
-	fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
+	fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_i64")
 	}
 
-	fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
+	fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_u8")
 	}
 
-	fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
+	fn serialize_u16(self, _v: u16) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_u16")
 	}
 
-	fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
+	fn serialize_u32(self, _v: u32) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_iu32")
 	}
 
-	fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
+	fn serialize_u64(self, _v: u64) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_u64")
 	}
 
-	fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
+	fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_f32")
 	}
 
-	fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
+	fn serialize_f64(self, _v: f64) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_f64")
 	}
 
-	fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
+	fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_char")
 	}
 
@@ -318,7 +326,7 @@ impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 		unimplemented!("serialize_none")
 	}
 
-	fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
+	fn serialize_some<T>(self, _value: &T) -> Result<Self::Ok, Self::Error>
 	where
 		T: ?Sized + Serialize,
 	{
@@ -329,22 +337,22 @@ impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 		unimplemented!("serialize_unit")
 	}
 
-	fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok, Self::Error> {
+	fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_unit_struct")
 	}
 
 	fn serialize_unit_variant(
 		self,
-		name: &'static str,
-		variant_index: u32,
-		variant: &'static str,
+		_name: &'static str,
+		_variant_index: u32,
+		_variant: &'static str,
 	) -> Result<Self::Ok, Self::Error> {
 		unimplemented!("serialize_unit_variant")
 	}
 
 	fn serialize_newtype_struct<T>(
 		self,
-		name: &'static str,
+		_name: &'static str,
 		value: &T,
 	) -> Result<Self::Ok, Self::Error>
 	where
@@ -355,10 +363,10 @@ impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 
 	fn serialize_newtype_variant<T>(
 		self,
-		name: &'static str,
-		variant_index: u32,
-		variant: &'static str,
-		value: &T,
+		_name: &'static str,
+		_variant_index: u32,
+		_variant: &'static str,
+		_value: &T,
 	) -> Result<Self::Ok, Self::Error>
 	where
 		T: ?Sized + Serialize,
@@ -366,54 +374,67 @@ impl<'a> Serializer for &'a mut SizeEstimatingPlaintextSerializer {
 		unimplemented!("serialize_newtype_variant")
 	}
 
-	fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+	fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
 		unimplemented!("serialize_seq")
 	}
 
-	fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+	fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
 		unimplemented!("serialize_tuple")
 	}
 
 	fn serialize_tuple_struct(
 		self,
-		name: &'static str,
-		len: usize,
+		_name: &'static str,
+		_len: usize,
 	) -> Result<Self::SerializeTupleStruct, Self::Error> {
 		unimplemented!("serialize_tuple_struct")
 	}
 
 	fn serialize_tuple_variant(
 		self,
-		name: &'static str,
-		variant_index: u32,
-		variant: &'static str,
-		len: usize,
+		_name: &'static str,
+		_variant_index: u32,
+		_variant: &'static str,
+		_len: usize,
 	) -> Result<Self::SerializeTupleVariant, Self::Error> {
 		unimplemented!("serialize_tuple_variant")
 	}
 
-	fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+	fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
 		unimplemented!("serialize_map")
 	}
 
 	fn serialize_struct(
 		self,
-		name: &'static str,
-		len: usize,
+		_name: &'static str,
+		_len: usize,
 	) -> Result<Self::SerializeStruct, Self::Error> {
 		unimplemented!("serialize_struct")
 	}
 
 	fn serialize_struct_variant(
 		self,
-		name: &'static str,
-		variant_index: u32,
-		variant: &'static str,
-		len: usize,
+		_name: &'static str,
+		_variant_index: u32,
+		_variant: &'static str,
+		_len: usize,
 	) -> Result<Self::SerializeStructVariant, Self::Error> {
 		unimplemented!("serialize_struct_variant")
 	}
 }
+
+/// the compound types that are handled by the serialization.
+/// some types are special-cased.
+enum CompoundType {
+	/// id tuples are strings, but serialize as a sequence.
+	IdTuple,
+	Struct,
+	Map,
+	Seq,
+}
+
+///
+struct SizeEstimatingCompoundSerializer(CompoundType, usize);
 
 impl<'a> SerializeSeq for SizeEstimatingCompoundSerializer {
 	type Ok = usize;
@@ -432,7 +453,7 @@ impl<'a> SerializeSeq for SizeEstimatingCompoundSerializer {
 	}
 }
 
-// maps are only used for the _finalIvs fields which are not encrypted.
+/// maps are only used for the _finalIvs fields which are not encrypted.
 impl<'a> SerializeMap for SizeEstimatingCompoundSerializer {
 	type Ok = usize;
 	type Error = SizeEstimationError;
@@ -457,14 +478,6 @@ impl<'a> SerializeMap for SizeEstimatingCompoundSerializer {
 		Ok(self.1)
 	}
 }
-
-enum CompoundType {
-	IdTuple,
-	Struct,
-	Map,
-	Seq,
-}
-struct SizeEstimatingCompoundSerializer(CompoundType, usize);
 
 impl<'a> SerializeStruct for SizeEstimatingCompoundSerializer {
 	type Ok = usize;
