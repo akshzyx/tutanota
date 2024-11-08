@@ -1,3 +1,5 @@
+//! keep in sync with MimeToolsTestMessages.java
+
 use crate::importer::importable_mail::{ImportableMail, MailContact};
 use serde::Deserialize;
 use std::borrow::Cow;

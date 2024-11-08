@@ -88,7 +88,7 @@ fn get_line_quote_level(line: String) -> i32 {
 /**
  * Adds <html> and <body> tags to the given html
  */
-pub fn add_html_page_tags(html: String) -> String {
+fn add_html_page_tags(html: String) -> String {
 	format!(
 		"<html>\r\n\
   <head>\r\n\

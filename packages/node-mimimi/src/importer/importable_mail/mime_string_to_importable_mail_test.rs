@@ -1,15 +1,29 @@
 //! Keep in sync with MimeStringToSmtpMessageConverterTest !
 
 use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, MimeHeaders};
 use tutasdk::date::DateTime;
 
 fn parse_mail(msg: &str) -> ImportableMail {
-	let parsed_message = MessageParser::default().parse(msg).unwrap();
+	MessageParser::default()
+		.parse(msg)
+		.unwrap()
+		.try_into()
+		.unwrap()
+}
 
-	println!("{:?}", parsed_message.headers());
-	let m: ImportableMail = parsed_message.try_into().unwrap();
-	m
+// to be able to convert any (str/string, str/string).into() => MailContact
+impl<N, A> From<(N, A)> for MailContact
+where
+	N: ToString,
+	A: ToString,
+{
+	fn from((name, address): (N, A)) -> Self {
+		Self {
+			mail_address: address.to_string(),
+			name: name.to_string(),
+		}
+	}
 }
 
 #[test]
@@ -25,124 +39,288 @@ Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-Type: multipart/mixed; boundary=frontier
 "#;
 	println!("{}", msg);
-	let m: ImportableMail = parse_mail(msg);
+	let m = parse_mail(msg);
 	assert_eq!("123456", m.message_id.unwrap());
 	assert_eq!(
+		m.reply_to_addresses,
 		vec![
-			MailContact {
-				name: "Reply".to_string(),
-				mail_address: "reply@tutanota.de".to_string()
-			},
-			MailContact {
-				name: "Reply2".to_string(),
-				mail_address: "reply2@tutanota.de".to_string()
-			},
+			("Reply", "reply@tutanota.de").into(),
+			("Reply2", "reply2@tutanota.de").into(),
 		],
-		m.reply_to_addresses
 	);
 	assert_eq!(
+		m.references,
 		vec!["sadf@tutanota.de".to_string(), "1234564@web.de".to_string()],
-		m.references
 	);
-	assert_eq!("1234564@web.de", m.in_reply_to.unwrap());
-	// assert_eq!("frontier", m.boundary);
+	assert_eq!(Some("1234564@web.de".to_string()), m.in_reply_to);
 	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 	assert_eq!(msg, m.headers_string);
 }
 
 #[test]
 fn bad_frontier() {
-	// todo!()
+	let msg = "Content-Type: multipart/mixed; boundary=komma;ist;nicht;erlaubt\n";
+	let parsed_message = MessageParser::default().parse(msg).unwrap();
+	let attributes = parsed_message
+		.content_type()
+		.unwrap()
+		.attributes
+		.as_ref()
+		.unwrap();
+	assert_eq!(attributes.as_slice(), [("boundary".into(), "komma".into())]);
 }
 
 #[test]
 fn empty_references() {
-	// todo!()
+	let msg = "Subject: Hello";
+	let m = parse_mail(msg);
+	assert!(m.references.is_empty());
 }
 
 #[test]
 fn empty_in_reply_to() {
-	// todo!()
+	let msg = "Subject: Hello";
+	let m = parse_mail(msg);
+	assert_eq!(None, m.in_reply_to);
 }
 
 #[test]
-fn text_plain_us_ascii() {
-	// todo!()
+fn text_plain_us_ascii_7bit() {
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+
+US-ASCII:  !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~"##;
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(m.subject, "Hello",);
+	assert_eq!("US-ASCII:  !\"#$%&amp;'()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", m.html_body_text);
+	assert_eq!(m.date, Some(DateTime::from_millis(1730991244000)));
 }
 
 #[test]
 fn text_plain_utf8bit() {
-	// todo!()
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8
+
+Tutanota: äüöß€*#\{³|@"##;
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("b", "b@tutanota.de").into()]);
+	assert_eq!("Hello", m.subject);
+	assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_plain_utf_explicit_8bit() {
-	// todo!()
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Tutanota: äüöß€*#\\{³|@"##;
+
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("b", "b@tutanota.de").into()]);
+	assert_eq!("Hello", m.subject);
+	assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_plain_utf_quoted_printable() {
-	// todo!()
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+Tutanota: =C3=A4=C3=BC=C3=B6=C3=9F=E2=82=AC*#\{=C2=B3|@"##;
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
+	assert_eq!("Hello", m.subject);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_plain_utf_base64() {
-	// todo!()
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+VHV0YW5vdGE6IMOkw7zDtsOf4oKsKiNce8KzfEA="##;
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!("Hello", m.subject);
+	assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_plain_utf_invalid_base64() {
-	// todo!()
+	let msg = r##"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: base64
+
+VHV0YW5vdGE6IMOkw7zDtsOf4oKsKiNce8KzfEA"##; // skip the padding "=" to force an exception
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!("Hello", m.subject);
+	assert_eq!("Tutanota: äüöß€*#\\{³", m.html_body_text);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_plain_format_flowed() {
-	// todo!()
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8; format=flowed
+				
+Tutanota: ist so toll und diese Zeile wird länger, deshalb gibt es \r\neinen soft-break!!!!!\r\nVor dieser Zeile gibt es keinen soft break, sondern einen richtigen!"#;
+	let m = parse_mail(msg);
+
+	assert_eq!("Tutanota: ist so toll und diese Zeile wird länger, deshalb gibt es einen soft-break!!!!!\r\nVor dieser Zeile gibt es keinen soft break, sondern einen richtigen!", m.html_body_text);
 }
 
 #[test]
 fn text_plain_format_flowed_del_sp() {
-	// todo!()
+	let msg = r#"From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Subject: Hello
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/plain; charset=UTF-8; format=flowed; DelSp=yes
+
+Tutanota: ist so toll und diese Zeile wird länger, deshalb gibt es \r\neinen soft-break!!!!!\r\nVor dieser Zeile gibt es keinen soft break, sondern einen richtigen!"#;
+	let m = parse_mail(msg);
+	assert_eq!(
+		"Tutanota: ist so toll und diese Zeile wird länger, deshalb gibt eseinen soft-break!!!!!\r\nVor dieser Zeile gibt es keinen soft break, sondern einen richtigen!",
+		m.html_body_text);
 }
 
 #[test]
-fn text_plain_subject_encoded_word_Qencoding() {
-	// todo!()
+fn text_plain_subject_encoded_word_qencoding() {
+	let msg = r#"Subject: Hello =?ISO-8859-1?Q?=E4=F6=FC=DF?=abc
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+"#;
+	let m = parse_mail(msg);
+	assert_eq!("Hello äöüßabc", m.subject);
 }
 
 #[test]
-fn text_plain_subject_encoded_word_Qencoding_turkish() {
-	// todo!()
+fn text_plain_subject_encoded_word_qencoding_turkish() {
+	let msg = r#"Subject: =?iso-8859-9?Q?Paracard Hesap =D6zeti?=
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+"#;
+	let m = parse_mail(msg);
+	assert_eq!("Paracard Hesap Özeti", m.subject);
 }
 
 #[test]
-fn from_encoded_word_Qencoding() {
-	// todo!()
+fn from_encoded_word_qencoding() {
+	let msg = r#"Subject: =?utf-8?Q?=D0=9E=D0=B1=D1=8A=D0=B5=D0=B4=D0=B8=D0=BD=D0=B5=D0?==?utf-8?Q?=BD=D0=BD=D1=8B=D0=B5?==?utf-8?Q?_=D0=B4=D0=B5=D0=BC=D0=BE=D0=BA=D1=80=D0=B0=D1=82=D1=8B?=
+From: =?utf-8?Q?=D0=9E=D0=B1=D1=8A=D0=B5=D0=B4=D0=B8=D0=BD=D0=B5=D0?==?utf-8?Q?=BD=D0=BD=D1=8B=D0=B5?==?utf-8?Q?_=D0=B4=D0=B5=D0=BC=D0=BE=D0=BA=D1=80=D0=B0=D1=82=D1=8B?=<team@od.spb.ru>
+To: =?utf-8?Q?=D0=9E=D0=B1=D1=8A=D0=B5=D0=B4=D0=B8=D0=BD=D0=B5=D0?==?utf-8?Q?=BD=D0=BD=D1=8B=D0=B5?==?utf-8?Q?_=D0=B4=D0=B5=D0=BC=D0=BE=D0=BA=D1=80=D0=B0=D1=82=D1=8B?=<team@od.spb.ru>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+"#;
+	let m = parse_mail(msg);
+	assert_eq!("Объединенные демократы", m.subject);
+	assert_eq!("Объединенные демократы", m.from_addresses[0].name);
+	assert_eq!("Объединенные демократы", m.to_addresses[0].name);
 }
 
 #[test]
-fn from_encoded_word_Qencoding_colon() {
-	// todo!()
+fn from_encoded_word_qencoding_colon() {
+	let msg = r#"Subject: Hi
+From: =?utf-8?Q?=D0=9B=D0=B8=D1=82=D1=80=D0=B5=D1=81=3A=20=D0=A1=D0=B0=D0=BC=D0=B8=D0=B7=D0=B4=D0=B0=D1=82?= <mail@selfpub.ru>
+"#;
+	let m = parse_mail(msg);
+	assert_eq!(
+		m.from_addresses[0],
+		("Литрес: Самиздат", "mail@selfpub.ru").into()
+	);
 }
 
 #[test]
-fn recipients_encoded_word_Qencoding_colon() {
-	// todo!()
+fn recipients_encoded_word_qencoding_colon() {
+	let msg = "To: =?utf-8?Q?=D0=9B=D0=B8=D1=82=D1=80=D0=B5=D1=81=3A=20=D0=A1=D0=B0=D0=BC=D0=B8=D0=B7=D0=B4=D0=B0=D1=82?= <mail@selfpub.ru>\n";
+	let m = parse_mail(msg);
+	assert_eq!(
+		m.from_addresses[0],
+		("Литрес: Самиздат", "mail@selfpub.ru").into()
+	);
 }
 
 #[test]
-fn recipients_encoded_word_Qencoding_partly() {
-	// todo!()
+fn recipients_encoded_word_qencoding_partly() {
+	let msg = "To: =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>\n";
+	let m = parse_mail(msg);
+	assert_eq!(
+		m.from_addresses[0],
+		("André Pirard", "PIRARD@vm1.ulg.ac.be").into()
+	);
 }
 
 #[test]
 fn text_plain_subject_encoded_word_base64() {
-	// todo!()
+	let msg = r#"Subject: =?utf-8?B?SGVsbG8gw6TDtsO8w58=?=
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+"#;
+	let m = parse_mail(msg);
+	assert_eq!("Hello äöüß", m.subject);
 }
 
 #[test]
 fn text_html_only() {
-	// todo!()
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: text/html; charset=UTF-8
+
+<html><body><b><small>Hello äöüß</small></b><br></body></html>"#;
+	let m = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	assert_eq!(
+		"<html><body><b><small>Hello äöüß</small></b><br></body></html>",
+		m.html_body_text
+	);
 }
 
 #[test]
@@ -152,12 +330,29 @@ fn charset() {
 
 #[test]
 fn text_html_inline_charset_definition_utf8() {
-	// todo!()
+	let msg = r#"Content-type: text/html
+Content-Transfer-Encoding: 8bit
+
+<html><head><meta charset=\"utf-8\"></head><body><p>Благодарим Ви</p></body></html>"#;
+	let m = parse_mail(msg);
+
+	assert_eq!(
+		"<html><head><meta charset=\"utf-8\"></head><body><p>Благодарим Ви</p></body></html>",
+		m.html_body_text
+	);
 }
 
 #[test]
 fn text_html_inline_charset_definition_western() {
-	// todo!()
+	let msg = r#"Content-type: text/html
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0iSVNPLTg4NTktMTUiPjwvaGVhZD48Ym9keT48cD6kIPbkPC9wPjwvYm9keT48L2h0bWw+"#;
+	let m = parse_mail(msg);
+	assert_eq!(
+		"<html><head><meta charset=\"ISO-8859-15\"></head><body><p>€ öä</p></body></html>",
+		m.html_body_text
+	);
 }
 #[test]
 fn text_alternative() {
@@ -179,36 +374,53 @@ Content-type: text/html; charset=UTF-8;
 "#;
 	let m: ImportableMail = parse_mail(msg);
 
-	assert_eq!(
-		&MailContact {
-			mail_address: "a@tutanota.de".to_string(),
-			name: "A".to_string()
-		},
-		m.from_addresses.first().unwrap()
-	);
-	assert_eq!(
-		vec![MailContact {
-			mail_address: "b@tutanota.de".to_string(),
-			name: "B".to_string()
-		}],
-		m.to_addresses
-	);
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 	assert_eq!("Hello", m.subject);
 	assert_eq!(
 		"<html><body><b><small>Hello äöüß</small></b><br></body></html>",
 		m.html_body_text
 	);
-	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn invalid_domains_in_mail_addresses() {
-	// todo!()
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@a.example>, C <c@c.com>, D <d@d.invalid>
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(
+		m.to_addresses,
+		vec![
+			("B", "b@a.example").into(),
+			("C", "c@c.com").into(),
+			("D", "d@d.invalid").into()
+		]
+	);
 }
 
 #[test]
 fn multiple_to_headers() {
-	// todo!()
+	let msg = r#"Subject: Hello
+From: A <a@tutanota.de>
+To: B <b@b.org>, C <c@c.com>
+To: D <d@d.net>
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(
+		m.to_addresses,
+		vec![
+			("B", "b@b.org").into(),
+			("C", "c@c.com").into(),
+			("D", "d@d.net").into()
+		]
+	);
 }
 
 #[test]
@@ -216,7 +428,7 @@ fn attached_message() {
 	let msg = r#"Subject: parent message
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100 (CET)
+Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-Type: multipart/mixed; boundary=frontier
 
 --frontier
@@ -229,56 +441,189 @@ Content-Type: message/rfc822; charset=UTF-8;
 Subject: attached message
 From: D <d@tutanota.de>
 To: E <e@tutanota.de>
-Date: Thu, 7 Nov 2024 15:54:04 +0100 (CET)
+Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: text/plain; charset=UTF-8;
+
 
 Hello äöüß
 "#;
 
 	let m: ImportableMail = parse_mail(msg);
 
-	// assert_eq!(&MailContact { mail_address: "a@tutanota.de".to_string(), name: "A".to_string() }, m.from_addresses.first().unwrap());
-	// assert_eq!(vec![MailContact { mail_address: "b@tutanota.de".to_string(), name: "B".to_string() }], m.to_addresses);
-	assert_eq!("parent message", m.subject);
-	assert_eq!("normal message", m.html_body_text);
-	// assert_eq!(Some(DateTime::from_millis(0)), m.date);
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(m.subject, "parent message");
+	assert_eq!(m.html_body_text, "normal message");
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 
-	let attachment = m.attachments.first().unwrap();
-	match attachment {
-		ImportableMailAttachment::Attachment { .. } => {
-			panic!("should be an attached message")
-		},
-		ImportableMailAttachment::AttachedMessage { message } => {
-			// assert_eq!(MailContact{name: "D", mail_address: "d@tutanota.de"}, m.getSender());
-			// assert_eq!(List.of(new SmtpMailContact("E", "e@tutanota.de")), m.getToRecipients());
-			// assert_eq!("attached message", attached.getSubject());
-			// assert_eq!("Hello äöüß", attached.getPlainBodyText());
-			// assert_eq!(null, attached.getHtmlBodyText());
-			// assert_eq!(yesterday, attached.getSentDate());
-		},
+	assert_eq!(m.attachments.len(), 1);
+	for attachment in m.attachments {
+		match attachment {
+			ImportableMailAttachment::Attachment { .. } => {
+				// todo:
+				// should we have got the attachment here or in AttachedMessage?
+			},
+			ImportableMailAttachment::AttachedMessage { message: attached } => {
+				assert_eq!(attached.from_addresses, vec![("D", "d@tutanota.de").into()]);
+				assert_eq!(attached.to_addresses, vec![("E", "e@tutanota.de").into()]);
+				assert_eq!(attached.subject, "attached message");
+				assert_eq!(attached.html_body_text, "Hello äöüß");
+				assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date)
+			},
+		}
 	}
 }
 
 #[test]
 fn attachments() {
-	// todo!()
+	let msg = r#"Subject: multiple attachments
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
+
+--frontier
+Content-type: text/plain; charset=UTF-8;
+
+Hello äöüß
+--frontier
+Content-type: application/octet-stream;
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=a1.txt;
+
+Zmlyc3QgYXR0YWNobWVudA==
+--frontier
+Content-type: application/pdf;
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=a2.pdf;
+
+c2Vjb25kIGF0dGFjaG1lbnQ=
+--frontier
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=withoutContentType.pdf;
+
+c2Vjb25kIGF0dGFjaG1lbnQ=
+--frontier--
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(m.subject, "multiple attachments");
+
+	assert_eq!(m.attachments.len(), 3);
+	todo!()
 }
 
 #[test]
 fn inline_attachment() {
-	// todo!()
+	let msg = r#"Subject: inline attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
+
+--frontier
+Content-type: text/html; charset=UTF-8;
+
+<html><body><img src="cid:123@tutanota.de"/></body></html>
+--frontier
+Content-type: application/octet-stream;
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename=a1.png;
+Content-ID: <123@tutanota.de>;
+
+Zmlyc3QgYXR0YWNobWVudA==
+--frontier--
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+
+	todo!()
 }
 
 #[test]
 fn attachment_to_attached_message() {
-	// todo!()
+	let msg = r#"Subject: parent message
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: message/rfc822; charset=UTF-8;
+
+Subject: attached message
+From: D <d@tutanota.de>
+To: E <e@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-type: application/octet-stream;
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=indirectly_attached.txt;
+
+Zmlyc3QgYXR0YWNobWVudA==
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
 }
 
 #[test]
-fn textAttachment() {}
+fn text_attachment() {
+	let msg = r#"Subject: text attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
+
+--frontier
+Content-type: text/plain; charset=UTF-8
+
+Tutanota: äüöß€*#\\{³|@
+--frontier
+Content-type: text/plain; charset=UTF-8
+Content-Disposition: attachment; filename=a1.txt;
+
+Abc, die Katze liegt im Schnee ! äöü?ß !
+--frontier--
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
+}
 
 #[test]
-fn htmlAttachment() {}
+fn html_attachment() {
+	let msg = r#"Subject: html attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
+
+--frontier
+Content-type: text/plain; charset=UTF-8
+
+Tutanota: äüöß€*#\\{³|@
+--frontier
+Content-type: text/html; charset=UTF-8
+Content-Disposition: attachment; filename=a1.html;
+
+<html><body><b><small>Hello äöüß</small></b><br></body></html>
+--frontier--
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	todo!()
+}
 
 #[test]
 fn multiple_plain_body_text_parts_are_concatenated() {
@@ -317,43 +662,36 @@ second plain text in body
 
 #[test]
 fn multiple_html_body_text_parts_are_concatenated() {
-	let eml_contents = r#"Message-Id: some-id
-From: A <a@example.org>
-To: B <b@example.org>
-Date: Tue, 5 Nov 2024 13:18:59 +0000
-Content-Type: multipart/mixed; boundary=line
+	let msg = r#"Message-Id: some-id
+Subject: multiple text/html parts concatenated
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
 
---line
+--frontier
 Content-type: text/html; charset=UTF-8
 
-<p>first html text in body</p>
+<html><body><b><small>Hello äöüß</small></b><br></body></html>
+--frontier
+Content-type: text/html; charset=UTF-8
 
---line
-Content-Type: text/html; charset=UTF-8
-
-<p>second html text in body</p>
---line--
+<html><body><b><small>Test Test</small></b><br></body></html>
+--frontier--
 "#;
 
-	let parsed_message = MessageParser::default()
-		.with_mime_headers()
-		.parse(eml_contents)
-		.unwrap();
-	let text_contents = parsed_message
-		.html_bodies()
-		.map(|a| a.text_contents().unwrap())
-		.collect::<Vec<_>>()
-		.join("");
-	assert_eq!(
-		"<p>first html text in body</p>\n<p>second html in body</p>",
-		text_contents
-	);
+	let m = parse_mail(msg);
+
+	assert_eq!("multiple text/html parts concatenated", m.subject);
+	assert_eq!("<html><body><b><small>Hello äöüß</small></b><br></body></html><html><body><b><small>Test Test</small></b><br></body></html>", m.html_body_text);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+	assert_eq!(0, m.attachments.len());
 }
 
 #[test]
 // todo! what does this test (map)
 fn concatenate_alternative_html_text_parts() {
-	let eml_contents = r#"Message-Id: some-id
+	let msg = r#"Message-Id: some-id
 From: A <a@example.org>
 To: B <b@example.org>
 Date: Tue, 5 Nov 2024 13:18:59 +0000
@@ -371,21 +709,14 @@ Content-Type: text/html; charset=UTF-8
 
 --line--
 "#;
-
-	let parsed_message = MessageParser::default()
-		.with_mime_headers()
-		.parse(eml_contents)
-		.unwrap();
-	for body_part in parsed_message.html_bodies() {
-		eprintln!("=====");
-		eprintln!("{body_part:#?}");
-	}
+	let m = parse_mail(msg);
+	todo!()
 }
 
 #[test]
 // todo! what does this test (map)
 fn concatenate_multiple_html_and_plain_text_parts() {
-	let eml_contents = r#"Message-Id: some-id
+	let msg = r#"Message-Id: some-id
 From: A <a@example.org>
 To: B <b@example.org>
 Date: Tue, 5 Nov 2024 13:18:59 +0000
@@ -405,84 +736,179 @@ first plain text in body
 --line--
 "#;
 
-	let parsed_message = MessageParser::default()
-		.with_mime_headers()
-		.parse(eml_contents)
-		.unwrap();
-
-	eprintln!("{:?}", parsed_message.text_body);
-	eprintln!("{:?}", parsed_message.html_body);
-	eprintln!("{:?}", parsed_message.attachments);
-
-	let text_contents = parsed_message
-		.text_bodies()
-		.map(|a| a.text_contents().unwrap())
-		.collect::<Vec<_>>()
-		.join("");
-	assert_eq!(
-		"<p>first html text in body</p>\nfirst plain text in body",
-		text_contents
-	);
+	let m = parse_mail(msg);
+	todo!()
 }
 
 #[test]
 fn plain_body_text_parts_are_concatenated_with_html_body_parts_if_html_body_parts_already_existing()
 {
+	let msg = r#"Subject: multiple text/html and text/plain parts concatenated to single text/html
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: Thu, 7 Nov 2024 15:54:04 +0100
+Content-Type: multipart/mixed; boundary=frontier
+
+--frontier
+Content-type: text/html; charset=UTF-8
+
+<html><body><b><small>Hello äöüß</small></b><br></body></html>
+--frontier
+Content-type: text/html; charset=UTF-8
+
+<html><body><b><small>Test Test</small></b><br></body></html>
+--frontier
+Content-type: text/plain; charset=UTF-8
+
+Abc, die Katze liegt im Schnee ! äöü?ß !
+--frontier-
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(
+		"multiple text/html and text/plain parts concatenated to single text/html",
+		m.subject
+	);
 	todo!()
 }
 
 #[test]
 fn plain_body_text_parts_are_converted_to_html_body_parts_if_html_body_parts_follow_afterwards() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn text_attachment_with_disposition() {
-	todo!()
+	let msg = r#"Subject: text attachment
+From: A <a@tutanota.de>
+To: B <b@tutanota.de>
+Date: " + new MailDateFormat().format(date) + "
+Content-type: text/plain; charset=UTF-8
+Content-Disposition: attachment; filename=a1.txt;
+
+Abc, die Katze liegt im Schnee ! äöü?ß !
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn attachment_with_non_ascii_name() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn attachment_filename_in_content_type() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn attachment_filename_qencoding() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn encrypted() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn can_map_to_all_header_value() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn recipient_groups() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn undisclosed_recipients() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn long_content_type() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
-fn normalize_header_value() {}
+fn normalize_header_value() {
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
+}
 
 #[test]
 fn get_spf_result() {
@@ -491,25 +917,60 @@ fn get_spf_result() {
 
 #[test]
 fn mail_from_with_delemiter() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn incomplete_text_content_type() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn calendar_content_type() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn calendar_content_type_method() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
 
 #[test]
 fn invalid_content_types_default_to_text_plain() {
-	todo!()
+	let msg = r#"
+
+"#;
+	let m: ImportableMail = parse_mail(msg);
+
+	assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+	assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+	assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 }
