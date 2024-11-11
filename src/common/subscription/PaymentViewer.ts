@@ -55,6 +55,7 @@ import type { UpdatableSettingsViewer } from "../settings/Interfaces.js"
 import { ProgrammingError } from "../api/common/error/ProgrammingError.js"
 import { showSwitchDialog } from "./SwitchSubscriptionDialog.js"
 import { GENERATED_MAX_ID } from "../api/common/utils/EntityUtils.js"
+import { createDropdown } from "../gui/base/Dropdown.js"
 
 assertMainOrNode()
 
@@ -320,13 +321,26 @@ export class PaymentViewer implements UpdatableSettingsViewer {
 							title: "download_action",
 							icon: Icons.Download,
 							size: ButtonSize.Compact,
-							click: () => this.doInvoiceDownload(posting),
+							click: (e, dom) =>
+								createDropdown({
+									width: 300,
+									lazyButtons: () => [
+										{
+											label: "supportMenu_label", // PDF (PDF/A)
+											click: () => this.doPdfInvoiceDownload(posting),
+										},
+										{
+											label: "keyboardShortcuts_title", // XRechnung (UBL)
+											click: () => this.doXrechnungInvoiceDownload(posting),
+										},
+									],
+								})(e, dom),
 					  }
 					: null,
 		}
 	}
 
-	private async doInvoiceDownload(posting: CustomerAccountPosting): Promise<unknown> {
+	private async doPdfInvoiceDownload(posting: CustomerAccountPosting): Promise<unknown> {
 		if (client.compressionStreamSupported()) {
 			return showProgressDialog("pleaseWait_msg", locator.customerFacade.generatePdfInvoice(neverNull(posting.invoiceNumber))).then((pdfInvoice) =>
 				locator.fileController.saveDataFile(pdfInvoice),
@@ -340,6 +354,13 @@ export class PaymentViewer implements UpdatableSettingsViewer {
 				return Dialog.message("invoiceFailedBrowser_msg")
 			}
 		}
+	}
+
+	private async doXrechnungInvoiceDownload(posting: CustomerAccountPosting) {
+		return showProgressDialog(
+			"pleaseWait_msg",
+			locator.customerFacade.generateXRechnungInvoice(neverNull(posting.invoiceNumber)).then((xInvoice) => locator.fileController.saveDataFile(xInvoice)),
+		)
 	}
 
 	private updateAccountingInfoData(accountingInfo: AccountingInfo) {
