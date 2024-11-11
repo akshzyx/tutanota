@@ -102,6 +102,8 @@ impl Importer {
                     .map_err(IterationError::File),
             };
 
+
+
             let import_res = match next_importable_mail {
                 Ok(next_importable_mail) => self.import_all_mail(vec![next_importable_mail]).await,
 
@@ -168,15 +170,11 @@ impl Importer {
         let import_count = importable_mail.len();
         let all_imports = importable_mail
             .into_iter()
-            .map(ImportMailData::from)
-            .collect();
+            .map(ImportMailData::from);
 
         const MAX_REQUEST_SIZE: usize = 1024 * 1024 * 10;
-        let Ok(import_chunks) = reduce_to_chunks(all_imports, MAX_REQUEST_SIZE, estimate_json_size)
-        else {
-            // one of the elements does not fit into a chunk
-            return Err(());
-        };
+        let import_chunks: Vec<Vec<ImportMailData>> = reduce_to_chunks(all_imports, MAX_REQUEST_SIZE, Box::new(estimate_json_size)).collect();
+
         let mut mails: Vec<IdTupleGenerated> = Vec::with_capacity(import_count);
         for imports in import_chunks {
             let import_mail_post_in = ImportMailPostIn {

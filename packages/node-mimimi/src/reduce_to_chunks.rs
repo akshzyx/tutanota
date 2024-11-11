@@ -1,37 +1,60 @@
+use std::iter::Peekable;
+use std::ops::Deref;
+
+struct ChunkingIterator<Inner, Element>
+where
+    Inner: Iterator,
+{
+    inner: Peekable<Inner>,
+    max_size: usize,
+    sizer: Box<dyn Fn(&Element) -> usize>,
+}
+
+impl<Inner, Element> Iterator for ChunkingIterator<Inner, Element>
+where
+    Inner: Iterator<Item=Element>,
+{
+    type Item = Vec<Element>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut seq = &mut self.inner;
+        let element = seq.peek();
+        let Some(mut element) = element else {
+            return None;
+        };
+
+        let mut chunk: Vec<Element> = Vec::new();
+        let mut current_chunk_size = 0_usize;
+        loop {
+            let element_size = self.sizer.deref()(element);
+            if element_size > self.max_size {
+                // this element is too big for one chunk. we might just ignore that and make a
+                // one-element chunk that fails to upload, or we stop iteration here.
+                // this discards any elements already in the chunk
+                return None;
+            }
+            let new_chunk_size = current_chunk_size.saturating_add(element_size);
+            if new_chunk_size > self.max_size {
+                // chunk is full - this element goes into the next chunk.
+                // because we used peek() it'll still be available for the next call to this function.
+                return Some(chunk);
+            } else {
+                current_chunk_size = new_chunk_size;
+                chunk.push(seq.next().expect("got None from next even though peek() gave Some"));
+                element = match seq.peek() {
+                    None => break,
+                    Some(e) => e
+                };
+            }
+        }
+        Some(chunk)
+    }
+}
 /// split a given vector of elements into a vector of chunks not exceeding max_size, where the
 /// chunks size is calculated by summing up the elements sizes as given by the sizer function.
 ///
 /// the number of chunks is not guaranteed to be optimal.
-pub fn reduce_to_chunks<T>(mut seq: Vec<T>, max_size: usize, sizer: impl Fn(&T) -> usize) -> Result<Vec<Vec<T>>, ()> {
-    let mut output: Vec<Vec<T>> = Vec::new();
-    loop {
-        let mut current_chunk_size = 0_usize;
-        if seq.is_empty() {
-            break;
-        }
-        let mut split_count: usize = 0_usize;
-
-        'chunker: for element in seq.iter() {
-            let size = sizer(element);
-            if size > max_size {
-                return Err(());
-            }
-            if current_chunk_size.saturating_add(size) > max_size {
-                // chunk is full - the next element
-                break 'chunker;
-            } else {
-                current_chunk_size = current_chunk_size.saturating_add(size);
-                split_count += 1;
-            }
-        };
-        let len = seq.len();
-        let rest = seq.split_off(split_count);
-        output.push(seq);
-        seq = rest;
-        assert_eq!(seq.len() + split_count, len);
-    }
-
-    Ok(output)
+pub fn reduce_to_chunks<'element, Element: 'element>(mut seq: impl Iterator<Item=Element>, max_size: usize, sizer: Box<dyn Fn(&Element) -> usize>) -> impl Iterator<Item=Vec<Element>> {
+    ChunkingIterator { inner: seq.peekable(), max_size, sizer }
 }
 
 
@@ -47,7 +70,7 @@ mod tests {
             vec![5],
             vec![6]
         ],
-                   reduce_to_chunks::<usize>(vec![1, 2, 3, 4, 5, 6], 6, |item| { *item }).unwrap()
+                   reduce_to_chunks::<usize>(vec![1, 2, 3, 4, 5, 6].into_iter(), 6, Box::new(|item| { *item })).collect::<Vec<Vec<usize>>>()
         );
     }
 
@@ -56,21 +79,23 @@ mod tests {
         assert_eq!(vec![
             vec![1, 2, 3, 4, 5, 6],
         ],
-                   reduce_to_chunks::<usize>(vec![1, 2, 3, 4, 5, 6], 21, |item| { *item }).unwrap()
+                   reduce_to_chunks::<usize>(vec![1, 2, 3, 4, 5, 6].into_iter(), 21, Box::new(|item| { *item })).collect::<Vec<Vec<usize>>>()
         );
     }
 
+    #[test]
     fn reduce_to_chunks_empty() {
         assert_eq!(
             Vec::<Vec<usize>>::new(),
-            reduce_to_chunks::<usize>(vec![], 0, |item| { *item }).unwrap()
+            reduce_to_chunks::<usize>(vec![].into_iter(), 0, Box::new(|item| { *item })).collect::<Vec<Vec<usize>>>()
         );
     }
 
+    #[test]
     fn split_too_big() {
         assert_eq!(
-            Err(()),
-            reduce_to_chunks::<usize>(vec![1, 10, 11], 2, |item| { *item })
+            Vec::<Vec<usize>>::new(),
+            reduce_to_chunks::<usize>(vec![1, 10, 11].into_iter(), 2, Box::new(|item| { *item })).collect::<Vec<Vec<usize>>>()
         );
     }
 }
