@@ -2,13 +2,16 @@ use crate::importer::file_reader::import_client::{FileImport, FileIterationError
 use crate::importer::imap_reader::import_client::{ImapImport, ImapIterationError};
 use crate::importer::imap_reader::ImapImportConfig;
 use crate::importer::importable_mail::ImportableMail;
+use crate::reduce_to_chunks::reduce_to_chunks;
 use crate::tuta::credentials::TutaCredentials;
 use napi::bindgen_prelude::Error as NapiError;
+use serde::Serialize;
 use std::sync::Arc;
 use tutasdk::crypto::aes::Iv;
 use tutasdk::crypto::key::GenericAesKey;
 use tutasdk::crypto::randomizer_facade::RandomizerFacade;
-use tutasdk::entities::generated::tutanota::{ImportMailData, ImportMailPostIn, ImportMailPostOut};
+use tutasdk::entities::generated::tutanota::{ImportMailData, ImportMailPostIn};
+use tutasdk::entities::json_size_estimator::estimate_json_size;
 use tutasdk::login::Credentials;
 use tutasdk::net::native_rest_client::NativeRestClient;
 use tutasdk::services::generated::tutanota::ImportMailService;
@@ -100,7 +103,7 @@ impl Importer {
             };
 
             let import_res = match next_importable_mail {
-                Ok(next_importable_mail) => self.import_one_mail(next_importable_mail).await,
+                Ok(next_importable_mail) => self.import_all_mail(vec![next_importable_mail]).await,
 
                 // source says, all the iteration have ended,
                 Err(IterationError::File(FileIterationError::SourceEnd))
@@ -144,10 +147,10 @@ impl Importer {
 
     /// once we get the ImportableMail from either of source,
     /// continue to the uploading counterpart
-    async fn import_one_mail(
+    async fn import_all_mail(
         &self,
-        importable_mail: ImportableMail,
-    ) -> Result<ImportMailPostOut, ()> {
+        importable_mail: Vec<ImportableMail>,
+    ) -> Result<Vec<IdTupleGenerated>, ()> {
         let new_aes_256_key = GenericAesKey::from_bytes(
             self.randomizer_facade
                 .generate_random_array::<{ tutasdk::crypto::aes::AES_256_KEY_SIZE }>()
@@ -162,31 +165,47 @@ impl Importer {
         let owner_enc_session_key =
             mail_group_key.encrypt_key(&new_aes_256_key, Iv::generate(&self.randomizer_facade));
 
-        let import_mail_data = ImportMailData::from(importable_mail);
-        let import_mail_post_in = ImportMailPostIn {
-            ownerEncSessionKey: owner_enc_session_key.object,
-            ownerGroup: self.target_owner_group.clone(),
-            ownerKeyVersion: owner_enc_session_key.version,
-            imports: vec![import_mail_data],
-            targetMailFolder: self.target_mail_folder.clone(),
-            _format: 0,
-            _errors: None,
-            _finalIvs: Default::default(),
+        let import_count = importable_mail.len();
+        let all_imports = importable_mail
+            .into_iter()
+            .map(ImportMailData::from)
+            .collect();
+
+        const MAX_REQUEST_SIZE: usize = 1024 * 1024 * 10;
+        let Ok(import_chunks) = reduce_to_chunks(all_imports, MAX_REQUEST_SIZE, estimate_json_size)
+        else {
+            // one of the elements does not fit into a chunk
+            return Err(());
         };
+        let mut mails: Vec<IdTupleGenerated> = Vec::with_capacity(import_count);
+        for imports in import_chunks {
+            let import_mail_post_in = ImportMailPostIn {
+                ownerEncSessionKey: owner_enc_session_key.object.clone(),
+                ownerGroup: self.target_owner_group.clone(),
+                ownerKeyVersion: owner_enc_session_key.version,
+                imports,
+                targetMailFolder: self.target_mail_folder.clone(),
+                _format: 0,
+                _errors: None,
+                _finalIvs: Default::default(),
+            };
 
-        let service_params = ExtraServiceParams {
-            session_key: Some(new_aes_256_key),
-            ..Default::default()
-        };
+            let service_params = ExtraServiceParams {
+                session_key: Some(new_aes_256_key.clone()),
+                ..Default::default()
+            };
 
-        let import_mail_post_out = self
-            .logged_in_sdk
-            .get_service_executor()
-            .post::<ImportMailService>(import_mail_post_in, service_params)
-            .await
-            .expect("Cannot execute ImportMailService");
+            let mut import_mail_post_out = self
+                .logged_in_sdk
+                .get_service_executor()
+                .post::<ImportMailService>(import_mail_post_in, service_params)
+                .await
+                .expect("Cannot execute ImportMailService");
 
-        Ok(import_mail_post_out)
+            mails.append(&mut import_mail_post_out.mails);
+        }
+
+        Ok(mails)
     }
 }
 
