@@ -17,7 +17,6 @@ export const domainConfigs = {
 		u2fAppId: "https://tutanota.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.tuta.com/giftcard",
 		referralBaseUrl: "https://app.tuta.com/signup",
-		websiteBaseUrl: "https://tutanota.com",
 	},
 	"test.tutanota.com": {
 		firstPartyDomain: true,
@@ -32,7 +31,6 @@ export const domainConfigs = {
 		u2fAppId: "https://test.tutanota.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.test.tuta.com/giftcard",
 		referralBaseUrl: "https://app.test.tuta.com/signup",
-		websiteBaseUrl: "https://tutanota.com",
 	},
 	"app.local.tutanota.com": {
 		firstPartyDomain: true,
@@ -47,7 +45,6 @@ export const domainConfigs = {
 		u2fAppId: "https://local.tutanota.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.local.tuta.com:9000/giftcard",
 		referralBaseUrl: "https://app.local.tuta.com:9000/signup",
-		websiteBaseUrl: "https://local.tutanota.com:9000",
 	},
 	"app.tuta.com": {
 		firstPartyDomain: true,
@@ -62,7 +59,6 @@ export const domainConfigs = {
 		u2fAppId: "https://app.tuta.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.tuta.com/giftcard",
 		referralBaseUrl: "https://app.tuta.com/signup",
-		websiteBaseUrl: "https://tuta.com",
 	},
 	"app.test.tuta.com": {
 		firstPartyDomain: true,
@@ -77,7 +73,6 @@ export const domainConfigs = {
 		u2fAppId: "https://app.test.tuta.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.test.tuta.com/giftcard",
 		referralBaseUrl: "https://app.test.tuta.com/signup",
-		websiteBaseUrl: "https://test.tuta.com",
 	},
 	"app.local.tuta.com": {
 		firstPartyDomain: true,
@@ -92,7 +87,6 @@ export const domainConfigs = {
 		u2fAppId: "https://app.local.tuta.com/u2f-appid.json",
 		giftCardBaseUrl: "https://app.local.tuta.com:9000/giftcard",
 		referralBaseUrl: "https://app.local.tuta.com:9000/signup",
-		websiteBaseUrl: "https://local.tuta.com:9000",
 	},
 	localhost: {
 		firstPartyDomain: true,
@@ -107,7 +101,6 @@ export const domainConfigs = {
 		u2fAppId: "http://localhost:9000/u2f-appid.json",
 		giftCardBaseUrl: "http://localhost:9000/giftcard",
 		referralBaseUrl: "http://localhost:9000/signup",
-		websiteBaseUrl: "https://tuta.com",
 	},
 	"{hostname}": {
 		firstPartyDomain: false,
@@ -122,6 +115,5 @@ export const domainConfigs = {
 		u2fAppId: "{protocol}//{hostname}/u2f-appid.json",
 		giftCardBaseUrl: "https://app.tuta.com/giftcard",
 		referralBaseUrl: "https://app.tuta.com/signup",
-		websiteBaseUrl: "https://tuta.com",
 	},
 }

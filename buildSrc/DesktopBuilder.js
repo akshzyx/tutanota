@@ -142,7 +142,7 @@ async function rollupDesktop(dirname, outDir, version, platform, architecture, d
 			}),
 			commonjs(),
 			disableMinify ? undefined : terser(),
-			preludeEnvPlugin(createEnv({ staticUrl: null, version, mode: "Desktop", dist: true, domainConfigs })),
+			preludeEnvPlugin(createEnv({ staticUrl: null, websiteUrl: null, version, mode: "Desktop", dist: true, domainConfigs })),
 			nativeBannerPlugin({
 				// Relative to the source file from which the .node file is loaded.
 				// In our case it will be desktop/DesktopMain.js, which is located in the same directory.

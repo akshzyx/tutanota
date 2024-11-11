@@ -57,8 +57,6 @@ type DomainConfig = {
 	giftCardBaseUrl: string
 	/** Which URL to use to build the referral URL. */
 	referralBaseUrl: string
-	/** Base URL for requesting any information from de website */
-	websiteBaseUrl: string
 }
 
 /** A map from hostname to parameters for that domain. */
@@ -66,6 +64,7 @@ type DomainConfigMap = Record<string, DomainConfig>
 
 declare var env: {
 	staticUrl?: string // if null the url from the browser is used
+	websiteUrl?: string /** Base URL for requesting any information from de website */
 	mode: EnvMode
 	platformId: PlatformId | null
 	dist: boolean

@@ -104,7 +104,7 @@ export async function showSupportDialog(logins: LoginController) {
 			]
 		},
 	}
-	await faq.init(locator.domainConfigProvider().getCurrentDomainConfig().websiteBaseUrl)
+	await faq.init()
 	const dialog = Dialog.largeDialog(header, child).addShortcut({
 		key: Keys.ESC,
 		exec: () => {

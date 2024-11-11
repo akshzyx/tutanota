@@ -1,7 +1,7 @@
 import path from "node:path"
 import fs from "fs-extra"
 import { build as esbuild } from "esbuild"
-import { getTutanotaAppVersion, runStep, writeFile } from "./buildUtils.js"
+import { getTutanotaAppVersion, getWebsiteUrl, runStep, writeFile } from "./buildUtils.js"
 import "zx/globals"
 import * as env from "./env.js"
 import { externalTranslationsPlugin, libDeps, preludeEnvPlugin, sqliteNativePlugin } from "./esbuildUtils.js"
@@ -69,7 +69,6 @@ export async function runDevBuild({ stage, host, desktop, clean, ignoreMigration
 					u2fAppId: `${protocol}//${hostname}:${port}/u2f-appid.json`,
 					giftCardBaseUrl: `${protocol}//${hostname}:${port}/giftcard`,
 					referralBaseUrl: `${protocol}//${hostname}:${port}/signup`,
-					websiteBaseUrl: "https://tuta.com",
 				},
 			}
 		}
@@ -187,7 +186,7 @@ globalThis.buildOptions.sqliteNativePath = "./better-sqlite3.node";`,
 					architecture: process.arch,
 					nativeBindingPath: "./better_sqlite3.node",
 				}),
-				preludeEnvPlugin(env.create({ staticUrl: null, version, mode: "Desktop", dist: false, domainConfigs })),
+				preludeEnvPlugin(env.create({ staticUrl: null, websiteUrl: null, version, mode: "Desktop", dist: false, domainConfigs })),
 				externalTranslationsPlugin(),
 			],
 		})
@@ -297,6 +296,9 @@ export async function prepareAssets(stage, host, version, domainConfigs, buildDi
 	/** @type {EnvMode[]} */
 	const modes = ["Browser", "App", "Desktop"]
 	for (const mode of modes) {
-		await createBootstrap(env.create({ staticUrl: getStaticUrl(stage, mode, host), version, mode, dist: false, domainConfigs }), buildDir)
+		await createBootstrap(
+			env.create({ staticUrl: getStaticUrl(stage, mode, host), websiteUrl: getWebsiteUrl(stage), version, mode, dist: false, domainConfigs }),
+			buildDir,
+		)
 	}
 }

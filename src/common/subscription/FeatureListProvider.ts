@@ -3,7 +3,7 @@ import { PlanPrices } from "../api/entities/sys/TypeRefs"
 import { TranslationKey } from "../misc/LanguageViewModel"
 import { PaymentInterval } from "./PriceUtils.js"
 import { AvailablePlans, PlanName, PlanType, PlanTypeToName } from "../api/common/TutanotaConstants.js"
-import { downcast, getFromMap } from "@tutao/tutanota-utils"
+import { assertNotNull, downcast, getFromMap } from "@tutao/tutanota-utils"
 import { isIOSApp } from "../api/common/Env.js"
 
 let dataProvider: FeatureListProvider | null = null
@@ -17,7 +17,7 @@ export class FeatureListProvider {
 
 	private async init(): Promise<void> {
 		if ("undefined" === typeof fetch) return
-		const listResourceUrl = `${this.domainConfig.websiteBaseUrl}/resources/data/features.json`
+		const listResourceUrl = `${assertNotNull(env.websiteUrl)}/resources/data/features.json`
 		try {
 			const featureList = await fetch(listResourceUrl).then((r) => r.json())
 			if (isIOSApp()) {

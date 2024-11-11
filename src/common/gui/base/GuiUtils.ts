@@ -1,6 +1,6 @@
 import type { Country } from "../../api/common/CountryList"
 import { Countries } from "../../api/common/CountryList"
-import type { InfoLink, TranslationKey } from "../../misc/LanguageViewModel"
+import type { InfoLink, InfoLinks, TranslationKey } from "../../misc/LanguageViewModel"
 import { lang } from "../../misc/LanguageViewModel"
 import { ButtonColor } from "./Button.js"
 import { Icons } from "./icons/Icons"

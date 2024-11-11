@@ -9,13 +9,11 @@ function getCspUrls(env) {
 	// https://app(.local/.test).tuta.com for the staticUrl itself
 	// https://(local./test.)tuta.com for the website
 	if (env.staticUrl) {
-		const url = new URL(env.staticUrl)
 		const staticUrlParts = env.staticUrl.split("//")
 		const apiUrl = staticUrlParts[0] + "//*.api." + staticUrlParts[1]
 		const webSocketUrl = `ws${env.staticUrl.substring(4)}`
 		const appApiUrl = `${env.staticUrl.replace(/^https?/, "api")}`
-		const websiteUrl = env.domainConfigs[url.hostname]?.websiteBaseUrl ?? "https://tuta.com"
-		return `${env.staticUrl} ${webSocketUrl} ${apiUrl} ${appApiUrl} ${websiteUrl}`
+		return `${env.staticUrl} ${webSocketUrl} ${apiUrl} ${appApiUrl} ${env.websiteUrl}`
 	} else {
 		return ""
 	}

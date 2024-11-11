@@ -28,7 +28,14 @@ export async function runTestBuild({ clean, fast = false }) {
 	}
 
 	const version = await getTutanotaAppVersion()
-	const localEnv = env.create({ staticUrl: "http://localhost:9000", version, mode: "Test", dist: false, domainConfigs })
+	const localEnv = env.create({
+		staticUrl: "http://localhost:9000",
+		websiteUrl: "https://local.tuta.com:9000",
+		version,
+		mode: "Test",
+		dist: false,
+		domainConfigs,
+	})
 
 	await runStep("Assets", async () => {
 		const pjPath = path.join("..", "package.json")

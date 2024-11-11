@@ -1,4 +1,4 @@
-import type { InfoLink, TranslationKey } from "../misc/LanguageViewModel.js"
+import type { InfoLink, InfoLinks, TranslationKey } from "../misc/LanguageViewModel.js"
 import { lang } from "../misc/LanguageViewModel.js"
 import m, { Children, Component, Vnode } from "mithril"
 import { ExpanderButton, ExpanderPanel } from "../gui/base/Expander.js"

@@ -1,6 +1,6 @@
 import type { LanguageViewModelType } from "../misc/LanguageViewModel"
 import { lang, LanguageViewModel } from "../misc/LanguageViewModel"
-import { delay, downcast, LazyLoaded } from "@tutao/tutanota-utils"
+import { assertNotNull, delay, downcast, LazyLoaded } from "@tutao/tutanota-utils"
 import { search } from "../api/common/utils/PlainTextSearch"
 import { ProgrammingError } from "../api/common/error/ProgrammingError.js"
 import { htmlSanitizer } from "../misc/HtmlSanitizer.js"
@@ -31,8 +31,7 @@ export class FaqModel {
 	private currentLanguageCode: string | null = null
 	private faqLanguages: LanguageViewModelType | null = null
 	private lazyLoaded: LazyLoaded<void>
-	private websiteBaseUrl: string = "https://tuta.com"
-
+	private readonly websiteBaseUrl: string = assertNotNull(env.websiteUrl)
 	private get faqLang(): LanguageViewModel {
 		if (this.faqLanguages == null) {
 			throw new ProgrammingError("faq not initialized!")
@@ -52,8 +51,7 @@ export class FaqModel {
 		})
 	}
 
-	async init(websiteBaseUrl: string): Promise<void> {
-		this.websiteBaseUrl = websiteBaseUrl
+	async init(): Promise<void> {
 		await this.lazyLoaded.getAsync()
 		this.getList()
 	}

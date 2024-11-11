@@ -14,7 +14,7 @@ import { locator } from "../api/main/CommonLocator"
 import { copyToClipboard } from "../misc/ClipboardUtils.js"
 import { mailLocator } from "../../mail-app/mailLocator.js"
 import { showSnackBar } from "../gui/base/SnackBar.js"
-import { LazyLoaded } from "@tutao/tutanota-utils"
+import { assertNotNull, LazyLoaded } from "@tutao/tutanota-utils"
 import { AffiliateViewModel } from "./AffiliateViewModel.js"
 
 /**
@@ -41,7 +41,7 @@ export class AffiliateSettingsViewer implements UpdatableSettingsViewer {
 				return m(ListColumnWrapper, m("p", "Error"))
 			}
 
-			const shareUrl = `${this.domainConfig.websiteBaseUrl}?t-src=${avm.data.promotionId}`
+			const shareUrl = `${assertNotNull(env.websiteUrl)}?t-src=${avm.data.promotionId}`
 
 			return m(
 				ListColumnWrapper,

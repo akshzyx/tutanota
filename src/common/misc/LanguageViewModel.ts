@@ -1,8 +1,8 @@
-import type { lazy } from "@tutao/tutanota-utils"
-import { downcast, typedEntries } from "@tutao/tutanota-utils"
+import { assertNotNull, downcast, lazy, typedEntries } from "@tutao/tutanota-utils"
 import type { TranslationKeyType } from "./TranslationKey"
 import { getWhitelabelCustomizations, WhitelabelCustomizations } from "./WhitelabelCustomizations"
 import { assertMainOrNodeBoot } from "../api/common/Env"
+import { locator } from "../api/main/CommonLocator.js"
 
 export type TranslationKey = TranslationKeyType
 export type TranslationText = TranslationKey | lazy<string>
@@ -194,35 +194,37 @@ export const languageNative: ReadonlyArray<{
 	}
 })
 
-export const enum InfoLink {
-	HomePage = "https://tuta.com",
-	About = "https://tuta.com/imprint",
+const websiteUrl = assertNotNull(env.websiteUrl)
+export const InfoLinks = Object.freeze({
+	HomePage: websiteUrl,
+	About: `${websiteUrl}/imprint`,
 	//terms
-	Terms = "https://tuta.com/terms",
-	Privacy = "https://tuta.com/privacy-policy",
-	GiftCardsTerms = "https://tuta.com/giftCardsTerms",
+	Terms: `${websiteUrl}/terms`,
+	Privacy: `${websiteUrl}/privacy-policy`,
+	GiftCardsTerms: `${websiteUrl}/giftCardsTerms`,
 	//faq
-	RecoverCode = "https://tuta.com/faq#reset",
-	SecondFactor = "https://tuta.com/faq#2fa",
-	SpamRules = "https://tuta.com/faq#spam",
-	DomainInfo = "https://tuta.com/faq#custom-domain",
-	Whitelabel = "https://tuta.com/faq#whitelabel",
-	ReferralLink = "https://tuta.com/faq#refer-a-friend",
-	Webview = "https://tuta.com/faq#webview",
-	Phishing = "https://tuta.com/faq#phishing",
-	MailAuth = "https://tuta.com/faq#mail-auth",
-	RunInBackground = "https://tuta.com/faq#tray-desktop",
-	LoadImages = "https://tuta.com/faq#load-images",
-	Usage = "https://tuta.com/faq#usage",
-	Download = "https://tuta.com/#download",
-	SharedMailboxes = "https://tuta.com/support/#shared-mailboxes",
-	InactiveAccounts = "https://tuta.com/faq/#inactive-accounts",
-	AppStorePaymentChange = "https://tuta.com/support/#appstore-payment-change",
-	AppStorePayment = "https://tuta.com/support/#appstore-payments",
-	AppStoreDowngrade = "https://tuta.com/support/#appstore-subscription-downgrade",
-	PasswordGenerator = "https://tuta.com/faq#passphrase-generator",
-	HomePageFreeSignup = "https://tuta.com/free-email",
-}
+	RecoverCode: `${websiteUrl}/faq#reset`,
+	SecondFactor: `${websiteUrl}/faq#2fa`,
+	SpamRules: `${websiteUrl}/faq#spam`,
+	DomainInfo: `${websiteUrl}/faq#custom-domain`,
+	Whitelabel: `${websiteUrl}/faq#whitelabel`,
+	ReferralLink: `${websiteUrl}/faq#refer-a-friend`,
+	Webview: `${websiteUrl}/faq#webview`,
+	Phishing: `${websiteUrl}/faq#phishing`,
+	MailAuth: `${websiteUrl}/faq#mail-auth`,
+	RunInBackground: `${websiteUrl}/faq#tray-desktop`,
+	LoadImages: `${websiteUrl}/faq#load-images`,
+	Usage: `${websiteUrl}/faq#usage`,
+	Download: `${websiteUrl}/#download`,
+	SharedMailboxes: `${websiteUrl}/support/#shared-mailboxes`,
+	InactiveAccounts: `${websiteUrl}/faq/#inactive-accounts`,
+	AppStorePaymentChange: `${websiteUrl}/support/#appstore-payment-change`,
+	AppStorePayment: `${websiteUrl}/support/#appstore-payments`,
+	AppStoreDowngrade: `${websiteUrl}/support/#appstore-subscription-downgrade`,
+	PasswordGenerator: `${websiteUrl}/faq#passphrase-generator`,
+	HomePageFreeSignup: `${websiteUrl}/free-email`,
+})
+export type InfoLink = (typeof InfoLinks)[keyof typeof InfoLinks]
 
 /**
  * Provides all localizations of strings on our gui.

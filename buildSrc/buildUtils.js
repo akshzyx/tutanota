@@ -125,3 +125,14 @@ export async function runStep(name, cmd) {
 export function writeFile(targetFile, content) {
 	return fs.mkdir(path.dirname(targetFile), { recursive: true }).then(() => fs.writeFile(targetFile, content, "utf-8"))
 }
+
+export function getWebsiteUrl(stage) {
+	switch (stage) {
+		case "test":
+			return "https://test.tuta.com"
+		case "local":
+			return "https://local.tuta.com:9000"
+		default: // prod
+			return "https://tuta.com"
+	}
+}

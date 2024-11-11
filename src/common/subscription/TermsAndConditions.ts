@@ -2,7 +2,7 @@
  * The most recently published version of the terms and conditions
  */
 import m, { Children } from "mithril"
-import { InfoLink, lang } from "../misc/LanguageViewModel"
+import { InfoLinks, lang } from "../misc/LanguageViewModel"
 import { isApp } from "../api/common/Env"
 import { requestFromWebsite } from "../misc/Website"
 import { Dialog } from "../gui/base/Dialog"
@@ -29,15 +29,15 @@ export function renderTermsAndConditionsButton(terms: TermsSection, version: str
 	switch (terms) {
 		case TermsSection.GiftCards:
 			label = lang.get("giftCardTerms_label")
-			link = InfoLink.GiftCardsTerms
+			link = InfoLinks.GiftCardsTerms
 			break
 		case TermsSection.Terms:
 			label = lang.get("termsAndConditionsLink_label")
-			link = InfoLink.Terms
+			link = InfoLinks.Terms
 			break
 		case TermsSection.Privacy:
 			label = lang.get("privacyLink_label")
-			link = InfoLink.Privacy
+			link = InfoLinks.Privacy
 			break
 	}
 	return m(
@@ -66,7 +66,7 @@ export const enum TermsSection {
 
 export async function showServiceTerms(section: TermsSection, version: string) {
 	const path = `/${section}/${version}.json`
-	const termsFromWebsite = await requestFromWebsite(path, locator.domainConfigProvider().getCurrentDomainConfig()).then((res) => res.json())
+	const termsFromWebsite = await requestFromWebsite(path).then((res) => res.json())
 	let visibleLang: "en" | "de" = lang.code.startsWith("de") ? "de" : "en"
 	let dialog: Dialog
 	let sanitizedTerms: string

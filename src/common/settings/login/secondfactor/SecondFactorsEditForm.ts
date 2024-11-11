@@ -5,7 +5,7 @@ import { SecondFactorTypeRef } from "../../../api/entities/sys/TypeRefs.js"
 import { assertNotNull, LazyLoaded, neverNull, ofClass } from "@tutao/tutanota-utils"
 import { Icons } from "../../../gui/base/icons/Icons.js"
 import { Dialog } from "../../../gui/base/Dialog.js"
-import { InfoLink, lang } from "../../../misc/LanguageViewModel.js"
+import { InfoLinks, lang } from "../../../misc/LanguageViewModel.js"
 import { assertEnumValue, SecondFactorType } from "../../../api/common/TutanotaConstants.js"
 import { showProgressDialog } from "../../../gui/dialogs/ProgressDialog.js"
 import type { TableAttrs, TableLineAttrs } from "../../../gui/base/Table.js"
@@ -50,7 +50,7 @@ export class SecondFactorsEditForm {
 			m(".h4.mt-l", lang.get("secondFactorAuthentication_label")),
 			m(Table, secondFactorTableAttrs),
 			this.domainConfigProvider.getCurrentDomainConfig().firstPartyDomain
-				? [ifAllowedTutaLinks(locator.logins, InfoLink.SecondFactor, (link) => m(MoreInfoLink, { link: link, isSmall: true }))]
+				? [ifAllowedTutaLinks(locator.logins, InfoLinks.SecondFactor, (link) => m(MoreInfoLink, { link: link, isSmall: true }))]
 				: null,
 		]
 	}

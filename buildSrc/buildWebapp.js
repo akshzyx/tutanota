@@ -15,6 +15,7 @@ import { createHtml } from "./createHtml.js"
 import { domainConfigs } from "./DomainConfigs.js"
 import { visualizer } from "rollup-plugin-visualizer"
 import { rollupWasmLoader } from "@tutao/tuta-wasm-loader"
+import { getWebsiteUrl } from "./buildUtils.js"
 
 /**
  * Builds the web app for production.
@@ -172,6 +173,7 @@ self.onmessage = function (msg) {
 	await createHtml(
 		env.create({
 			staticUrl: stage === "release" || stage === "local" ? null : restUrl,
+			websiteUrl: getWebsiteUrl(stage),
 			version,
 			mode: "Browser",
 			dist: true,
@@ -180,7 +182,7 @@ self.onmessage = function (msg) {
 		app,
 	)
 	if (stage !== "release") {
-		await createHtml(env.create({ staticUrl: restUrl, version, mode: "App", dist: true, domainConfigs }), app)
+		await createHtml(env.create({ staticUrl: restUrl, websiteUrl: getWebsiteUrl(stage), version, mode: "App", dist: true, domainConfigs }), app)
 	}
 
 	await bundleServiceWorker(chunks, version, minify, buildDir)
