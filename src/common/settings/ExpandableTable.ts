@@ -1,6 +1,6 @@
 import m, { Children, Component, Vnode } from "mithril"
 import stream from "mithril/stream"
-import type { InfoLink, InfoLinks, TranslationKey } from "../misc/LanguageViewModel.js"
+import type { InfoLink, TranslationKey } from "../misc/LanguageViewModel.js"
 import type { TableAttrs } from "../gui/base/Table.js"
 import { Table } from "../gui/base/Table.js"
 import { SettingsExpander } from "./SettingsExpander.js"

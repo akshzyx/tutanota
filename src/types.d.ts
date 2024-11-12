@@ -64,7 +64,7 @@ type DomainConfigMap = Record<string, DomainConfig>
 
 declare var env: {
 	staticUrl?: string // if null the url from the browser is used
-	websiteUrl?: string /** Base URL for requesting any information from de website */
+	websiteUrl?: string // Base URL for requesting any information from the website
 	mode: EnvMode
 	platformId: PlatformId | null
 	dist: boolean

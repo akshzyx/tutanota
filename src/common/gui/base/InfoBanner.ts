@@ -1,7 +1,7 @@
 import { AllIcons, Icon } from "./Icon.js"
 import m, { Children, Component, Vnode } from "mithril"
 import { theme } from "../theme.js"
-import type { InfoLink, InfoLinks, TranslationKey } from "../../misc/LanguageViewModel.js"
+import type { InfoLink, TranslationKey } from "../../misc/LanguageViewModel.js"
 import { lang } from "../../misc/LanguageViewModel.js"
 import type { ButtonAttrs } from "./Button.js"
 import { Button, ButtonType } from "./Button.js"
