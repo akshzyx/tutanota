@@ -43,7 +43,7 @@ export async function renderHtml(scripts, env) {
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@TutaPrivacy">
     <meta name="twitter:domain" content="tuta.com">
-    <meta name="twitter:image" content="https://tuta.com/resources/images/share-tutanota-twitter-thumbnail.png">
+    <meta name="twitter:image" content="${env.websiteUrl}/resources/images/share-tutanota-twitter-thumbnail.png">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Tuta Mail">
     <meta property="og:title" content="Turn ON Privacy">
@@ -51,11 +51,11 @@ export async function renderHtml(scripts, env) {
           content="Get a free email account with quantum-safe encryption and best privacy on all your devices. Green, secure &amp; no ads!">
     <meta property="og:locale" content="en">
     <meta property="og:url" content="https://tuta.com/">
-    <meta property="og:image" content="https://tuta.com/resources/images/share-tutanota-fb-thumbnail.png">
+    <meta property="og:image" content="${env.websiteUrl}/resources/images/share-tutanota-fb-thumbnail.png">
     <meta property="article:publisher" content="https://www.facebook.com/tutanota">
 	<meta itemprop="name" content="Turn ON Privacy">
 	<meta itemprop="description" content="Get a free email account with quantum-safe encryption and best privacy on all your devices. Green, secure &amp; no ads!">
-	<meta itemprop="image" content="https://tuta.com/images/share_image.png">
+	<meta itemprop="image" content="${env.websiteUrl}/images/share_image.png">
 	<meta name="apple-itunes-app" content="app-id=id922429609, affiliate-data=10lSfb">
 </head>
 <body style="background-color:transparent">
