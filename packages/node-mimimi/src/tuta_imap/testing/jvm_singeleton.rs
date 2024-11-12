@@ -4,7 +4,7 @@ use j4rs::{ClasspathEntry, JvmBuilder};
 static mut START_JVM_INVOCATION_COUNTER: i32 = 0;
 
 pub fn start_or_attach_to_jvm() -> i32 {
-	/// todo: SAFETY???
+	// todo: SAFETY???
 	unsafe {
 		if START_JVM_INVOCATION_COUNTER == 0 {
 			// create exactly one jvm and attach to it whenever we create a new IMAP test server

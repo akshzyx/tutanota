@@ -1,4 +1,4 @@
-///! Extends the functionality of mail_parser crate
+//! Extends the functionality of mail_parser crate
 use crate::importer::importable_mail::ReplyType;
 use mail_parser::HeaderName;
 use std::borrow::Cow;
@@ -12,11 +12,9 @@ pub(super) fn get_reply_type_from_headers<'a>(headers: &'a [mail_parser::Header<
 			if header.value().make_string().trim().is_empty() {
 				is_forward = true;
 			}
-		} else if header.name == HeaderName::References {
-			if header.value().make_string().trim().is_empty() {
-				is_reply = true;
-			}
-		}
+		} else if header.name == HeaderName::References && header.value().make_string().trim().is_empty() {
+  				is_reply = true;
+  			}
 		if is_reply && is_forward {
 			break;
 		}
@@ -40,7 +38,7 @@ pub(super) trait MakeString {
 
 impl<'a> MakeString for [mail_parser::Header<'a>] {
 	fn make_string(&self) -> Cow<str> {
-		self.into_iter()
+		self.iter()
 			.map(MakeString::make_string)
 			.collect::<Vec<_>>()
 			.join("\n")
@@ -75,10 +73,10 @@ impl<'a> MakeString for mail_parser::HeaderValue<'a> {
 	}
 }
 
-impl<'a> MakeString for mail_parser::DateTime {
+impl MakeString for mail_parser::DateTime {
 	fn make_string(&self) -> Cow<str> {
-		const DAY_OF_WEEK: [&'static str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-		const MONTH_OF_YEAR: [&'static str; 12] = [
+		const DAY_OF_WEEK: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+		const MONTH_OF_YEAR: [&str; 12] = [
 			"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec",
 		];
 
@@ -102,7 +100,7 @@ impl<'a> MakeString for mail_parser::DateTime {
 	}
 }
 
-impl<'a> MakeString for mail_parser::Received<'a> {
+impl<'x> MakeString for mail_parser::Received<'x> {
 	fn make_string(&self) -> Cow<str> {
 		Cow::Borrowed("todo!()")
 	}
@@ -112,12 +110,12 @@ impl<'a> MakeString for mail_parser::Address<'a> {
 	fn make_string(&self) -> Cow<str> {
 		match self {
 			mail_parser::Address::List(address_list) => address_list
-				.into_iter()
+				.iter()
 				.map(|addr| make_mail_address(addr.name(), addr.address()))
 				.collect::<Vec<_>>()
 				.join(",")
 				.into(),
-			mail_parser::Address::Group(group_list) => {
+			mail_parser::Address::Group(_group_list) => {
 				todo!()
 			},
 		}
@@ -128,7 +126,7 @@ impl<'a> MakeString for mail_parser::ContentType<'a> {
 	fn make_string(&self) -> Cow<str> {
 		let attribute_str = self.attributes.as_ref().map(|attributes| {
 			attributes
-				.into_iter()
+				.iter()
 				.map(|(name, value)| {
 					if value.is_empty() {
 						name.to_string()

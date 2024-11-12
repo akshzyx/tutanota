@@ -842,7 +842,7 @@ Content-Type: text/html; charset=UTF-8
 
 --line--
 "#;
-    let m = parse_mail(msg);
+    let _m = parse_mail(msg);
     todo!()
 }
 
@@ -869,7 +869,7 @@ first plain text in body
 --line--
 "#;
 
-    let m = parse_mail(msg);
+    let _m = parse_mail(msg);
     todo!()
 }
 
@@ -1089,7 +1089,7 @@ Content-Disposition: attachment; filename=withoutContentType.pdf;
 Message
 --frontier--
 "#;
-    let m: ImportableMail = parse_mail(msg);
+    let _m: ImportableMail = parse_mail(msg);
 
 	todo!()
 //     		assertEquals("text/plain", m.getAttachedFiles().get(0).getMimeType());
@@ -1144,7 +1144,7 @@ Content-Type: multipart/mixed; boundary=frontier
 
 --frontier
 "#;
-    let m: ImportableMail = parse_mail(msg);
+    let _m: ImportableMail = parse_mail(msg);
 
 	todo!()
 //     		assertEquals("A, B <a@external.de>", m.getSender().getMailAddress());
@@ -1166,7 +1166,7 @@ any body text
 
 --frontier
 "#;
-    let m: ImportableMail = parse_mail(msg);
+    let _m: ImportableMail = parse_mail(msg);
 
 	todo!()
 //     		assertEquals("any body text", m.getPlainBodyText());
@@ -1182,7 +1182,7 @@ References: <sadf@tutanota.de> <1234564@web.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-Type: text/calendar; charset=\"UTF-8\"; method=REQUEST
 "#;
-    let m: ImportableMail = parse_mail(msg);
+    let _m: ImportableMail = parse_mail(msg);
 
 	todo!()
 //     		assertEquals("a@tutanota.de", m.getSender().getMailAddress());

@@ -33,7 +33,7 @@ pub(super) enum MailState {
 pub(super) enum ICalType {
 	#[default]
 	Nothing = 0,
-	ICalPublish = 1,
+	ICalPublishh = 1,
 	ICalRequest = 2,
 	ICalAdd = 3,
 	ICalCancel = 4,
@@ -154,7 +154,7 @@ impl ImportableMail {
 
 		address_list
 			.as_ref()
-			.into_iter()
+			.iter()
 			.map(|address| MailContact {
 				mail_address: address.address().unwrap_or_default().to_string(),
 				name: address.name().unwrap_or_default().to_string(),
@@ -390,9 +390,9 @@ impl ImportableMail {
 		// multipart block should always come before all it's alternative
 	}
 
-	fn handle_binary<'a>(
+	fn handle_binary(
 		attachments: &mut Vec<ImportableMailAttachment>,
-		header_values: &Vec<mail_parser::Header<'a>>,
+		header_values: &Vec<mail_parser::Header<'_>>,
 		binary_content: Vec<u8>,
 		is_inline: bool,
 	) {
@@ -403,8 +403,7 @@ impl ImportableMail {
 		});
 		let content_type_attributes = content_type
 			// get attributes_of_content_type if content-type is there
-			.map(mail_parser::ContentType::attributes)
-			.flatten()
+			.and_then(mail_parser::ContentType::attributes)
 			// if can-not get attributes, default to empty list of attributes
 			.unwrap_or_default();
 		let filename = content_type_attributes
@@ -463,7 +462,7 @@ impl From<ImportableMail> for ImportMailData {
 			message_id,
 			in_reply_to,
 			references,
-			attachments,
+			attachments: _attachments,
 		} = importable_mail;
 
 		let date = date.unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
@@ -610,10 +609,7 @@ impl<'x> TryFrom<mail_parser::Message<'x>> for ImportableMail {
 			// different envelope sender should not contain address listed in from_addresses;
 			.filter(|diff_sender| {
 				from_addresses
-					.iter()
-					.filter(|from| from.mail_address != diff_sender.mail_address)
-					.next()
-					.is_some()
+					.iter().any(|from| from.mail_address != diff_sender.mail_address)
 			})
 			.map(|mail_address| mail_address.mail_address);
 

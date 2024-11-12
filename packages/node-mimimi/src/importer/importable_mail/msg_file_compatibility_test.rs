@@ -165,7 +165,7 @@ impl From<ExpectedMessage> for ImportableMail {
 			body_parts.push(plain_body_converted);
 		}
 
-		for attached_message in expected_message.attached_messages {
+		for _attached_message in expected_message.attached_messages {
 			let attached_message_converted = mail_parser::MessagePart {
 				headers: vec![],
 				is_encoding_problem: false,
@@ -179,7 +179,7 @@ impl From<ExpectedMessage> for ImportableMail {
 			body_parts.push(attached_message_converted);
 		}
 
-		for attached_file in expected_message.attached_files {
+		for _attached_file in expected_message.attached_files {
 			let attached_file_converted = mail_parser::MessagePart {
 				headers: vec![],
 				is_encoding_problem: false,

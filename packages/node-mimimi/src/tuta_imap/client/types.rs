@@ -18,7 +18,7 @@ impl ImapMail {
 					imap_mail.rfc822_full = rfc822_text.0.unwrap().into_inner().to_vec();
 				},
 
-				MessageDataItem::Envelope(envelope) => {},
+				MessageDataItem::Envelope(_envelope) => {},
 				MessageDataItem::Body(_) => {},
 				MessageDataItem::BodyExt { .. } => {},
 				MessageDataItem::BodyStructure(_) => {},

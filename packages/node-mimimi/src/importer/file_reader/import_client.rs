@@ -50,7 +50,7 @@ impl FileImport {
 		match mbox_source.next() {
 			Some(Ok(mbox_item)) => Ok(mbox_item.unwrap_contents()),
 
-			Some(Err(e)) => Err(FileIterationError::MboxParseError),
+			Some(Err(_e)) => Err(FileIterationError::MboxParseError),
 
 			None => {
 				self.mbox_sources.pop();

@@ -5,8 +5,7 @@ use crate::importer::importable_mail::ImportableMail;
 use crate::reduce_to_chunks::reduce_to_chunks;
 use crate::tuta::credentials::TutaCredentials;
 use napi::bindgen_prelude::Error as NapiError;
-use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tutasdk::crypto::aes::Iv;
 use tutasdk::crypto::key::GenericAesKey;
 use tutasdk::crypto::randomizer_facade::RandomizerFacade;
@@ -64,7 +63,7 @@ struct Importer {
     logged_in_sdk: Arc<LoggedInSdk>,
     target_owner_group: GeneratedId,
     target_mail_folder: IdTupleGenerated,
-    import_source: ImportSource,
+    import_source: Arc<Mutex<ImportSource>>,
     randomizer_facade: RandomizerFacade,
 }
 
@@ -85,74 +84,62 @@ pub enum IterationError {
     File(FileIterationError),
 }
 
-impl Importer {
-    pub async fn continue_import(&mut self) -> Result<ImportStatus, ()> {
-        let mut failed_import_count = 0_u32;
-        let mut success_import_count = 0_u32;
+struct ImportSourceIterator {
+    // it would be nice to not need the mutex, but when the importer continues the import,
+    // it mutates its own state and also calls mutating functions on the source. solving this
+    // probably requires a bigger restructure of the code (it's very OOP atm)
+    source: Arc<Mutex<ImportSource>>,
+}
 
-        'walk_through_source: loop {
-            let next_importable_mail = match &mut self.import_source {
-                ImportSource::RemoteImap { imap_import_client } => imap_import_client
-                    .fetch_next_mail()
-                    .await
-                    .map_err(IterationError::Imap),
+impl Iterator for ImportSourceIterator {
+    type Item = ImportableMail;
 
-                ImportSource::LocalFile { fs_email_client } => fs_email_client
-                    .get_next_importable_mail()
-                    .map_err(IterationError::File),
-            };
-
-
-
-            let import_res = match next_importable_mail {
-                Ok(next_importable_mail) => self.import_all_mail(vec![next_importable_mail]).await,
-
-                // source says, all the iteration have ended,
-                Err(IterationError::File(FileIterationError::SourceEnd))
-                | Err(IterationError::Imap(ImapIterationError::SourceEnd)) => {
-                    break 'walk_through_source;
-                }
-
-                Err(e) => {
-                    panic!("Cannot get next email from source: {e:?}")
-                }
-            };
-
-            match import_res {
-                // this import has been success,
-                Ok(_imported_mail_response) => success_import_count += 1,
-
-                Err(_) => {
-                    // todo: save the ImportableMail to some fail list,
-                    // since, in this iteration the source will not give this mail again,
-                    failed_import_count += 1;
-                }
-            }
-        }
-
-        if failed_import_count > 0 {
-            // some mail failed to import:
-            self.status = ImportStatus {
-                state: ImportState::Postponed,
-                imported_mails: success_import_count,
-            };
-        } else {
-            // nothing failed,
-            self.status = ImportStatus {
-                state: ImportState::Finished,
-                imported_mails: success_import_count,
-            };
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut source = self.source.lock().unwrap();
+        let next_importable_mail = match &mut *source {
+            // the other way (converting fs_source to an async_iterator) would be nicer, but that's a nightly feature
+            ImportSource::RemoteImap { imap_import_client } => imap_import_client
+                .fetch_next_mail()
+                .map_err(IterationError::Imap),
+            ImportSource::LocalFile { fs_email_client } => fs_email_client
+                .get_next_importable_mail()
+                .map_err(IterationError::File),
         };
 
+        match next_importable_mail {
+            Ok(next_importable_mail) => Some(next_importable_mail),
+
+            // source says, all the iteration have ended,
+            Err(IterationError::File(FileIterationError::SourceEnd))
+            | Err(IterationError::Imap(ImapIterationError::SourceEnd)) => {
+                None
+            }
+
+            Err(e) => {
+                // once we handle this case we will need another iterator that filters (and logs) the
+                // errors so we don't have to handle the error case during the chunking + upload
+                panic!("Cannot get next email from source: {e:?}")
+            }
+        }
+    }
+}
+
+impl Importer {
+    pub async fn continue_import(&mut self) -> Result<ImportStatus, ()> {
+        let source_iterator = ImportSourceIterator { source: Arc::clone(&self.import_source) };
+        let _ = self.import_all_mail(source_iterator).await;
         Ok(self.status.clone())
     }
 
     /// once we get the ImportableMail from either of source,
     /// continue to the uploading counterpart
-    async fn import_all_mail(
-        &self,
-        importable_mail: Vec<ImportableMail>,
-    ) -> Result<Vec<IdTupleGenerated>, ()> {
+    async fn import_all_mail<Iter>(
+        &mut self,
+        importable_mails: Iter,
+    ) -> Result<Vec<IdTupleGenerated>, ()>
+    where
+        Iter: Iterator<Item=ImportableMail>,
+    {
         let new_aes_256_key = GenericAesKey::from_bytes(
             self.randomizer_facade
                 .generate_random_array::<{ tutasdk::crypto::aes::AES_256_KEY_SIZE }>()
@@ -163,20 +150,24 @@ impl Importer {
             .logged_in_sdk
             .get_current_sym_group_key(&self.target_owner_group)
             .await
-            .map_err(|e| ())?;
+            .map_err(|_e| ())?;
         let owner_enc_session_key =
             mail_group_key.encrypt_key(&new_aes_256_key, Iv::generate(&self.randomizer_facade));
 
-        let import_count = importable_mail.len();
-        let all_imports = importable_mail
-            .into_iter()
-            .map(ImportMailData::from);
-
         const MAX_REQUEST_SIZE: usize = 1024 * 1024 * 10;
-        let import_chunks: Vec<Vec<ImportMailData>> = reduce_to_chunks(all_imports, MAX_REQUEST_SIZE, Box::new(estimate_json_size)).collect();
+        let import_chunks: Vec<Vec<ImportMailData>> = reduce_to_chunks(
+            importable_mails.map(ImportMailData::from),
+            MAX_REQUEST_SIZE,
+            Box::new(estimate_json_size),
+        ).collect();
 
-        let mut mails: Vec<IdTupleGenerated> = Vec::with_capacity(import_count);
+        let mut mails: Vec<IdTupleGenerated> = Vec::new();
+        let mut new_status = ImportStatus {
+            state: ImportState::Running,
+            imported_mails: 0,
+        };
         for imports in import_chunks {
+            let import_len = imports.len();
             let import_mail_post_in = ImportMailPostIn {
                 ownerEncSessionKey: owner_enc_session_key.object.clone(),
                 ownerGroup: self.target_owner_group.clone(),
@@ -193,16 +184,35 @@ impl Importer {
                 ..Default::default()
             };
 
-            let mut import_mail_post_out = self
+            let response = self
                 .logged_in_sdk
                 .get_service_executor()
                 .post::<ImportMailService>(import_mail_post_in, service_params)
-                .await
-                .expect("Cannot execute ImportMailService");
+                .await;
 
-            mails.append(&mut import_mail_post_out.mails);
+            match response {
+                // this import has been success,
+                Ok(mut imported_post_out) => {
+                    mails.append(&mut imported_post_out.mails);
+                    new_status = ImportStatus {
+                        state: ImportState::Running,
+                        imported_mails: self.status.imported_mails.saturating_add(u32::try_from(import_len).unwrap_or(u32::MAX)),
+                    };
+                }
+
+                Err(_) => {
+                    // todo: save the ImportableMails to some fail list,
+                    // since, in this iteration the source will not give these mail again,
+                    new_status = ImportStatus {
+                        state: ImportState::Postponed,
+                        imported_mails: self.status.imported_mails,
+                    };
+                }
+            }
         }
+        new_status.state = if new_status.state == ImportState::Postponed { ImportState::Postponed } else { ImportState::Finished };
 
+        self.status = new_status;
         Ok(mails)
     }
 }
@@ -212,7 +222,7 @@ impl ImporterApi {
         logged_in_sdk: Arc<LoggedInSdk>,
         target_owner_group: GeneratedId,
         target_mail_folder: IdTupleGenerated,
-        import_source: ImportSource,
+        import_source: Arc<Mutex<ImportSource>>,
     ) -> Self {
         let import_inner = Importer {
             logged_in_sdk,
@@ -248,11 +258,11 @@ impl ImporterApi {
         let logged_in_sdk_future = Self::create_sdk(tuta_credentials);
 
         let fs_email_client = FileImport::new(source_paths)
-            .map_err(|e| NapiError::from_reason("Cannot create file import"))?;
-        let import_source = ImportSource::LocalFile { fs_email_client };
+            .map_err(|_e| NapiError::from_reason("Cannot create file import"))?;
+        let import_source = Arc::new(Mutex::new(ImportSource::LocalFile { fs_email_client }));
         let logged_in_sdk = logged_in_sdk_future
             .await
-            .map_err(|e| NapiError::from_reason("Cannot create logged in sdk"))?;
+            .map_err(|_e| NapiError::from_reason("Cannot create logged in sdk"))?;
 
         Ok(ImporterApi::new(
             logged_in_sdk,
@@ -293,7 +303,7 @@ impl ImporterApi {
 impl ImporterApi {
     // once Self::continue_import return custom error,
     // do the error conversion here, or in <From> trait
-    fn error_conversion<E>(err: E) -> napi::Error {
+    fn error_conversion<E>(_err: E) -> napi::Error {
         todo!()
     }
 
@@ -395,9 +405,9 @@ mod tests {
             },
         };
 
-        let import_source = ImportSource::RemoteImap {
+        let import_source = Arc::new(Mutex::new(ImportSource::RemoteImap {
             imap_import_client: ImapImport::new(imap_import_config),
-        };
+        }));
         let randomizer_facade = RandomizerFacade::from_core(rand::rngs::OsRng);
         let target_mail_folder = get_test_import_folder_id(&logged_in_sdk, MailSetKind::Archive)
             .await
@@ -431,9 +441,9 @@ mod tests {
             .await
             .unwrap();
 
-        let import_source = ImportSource::LocalFile {
+        let import_source = Arc::new(Mutex::new(ImportSource::LocalFile {
             fs_email_client: FileImport::new(source_paths).unwrap(),
-        };
+        }));
         let randomizer_facade = RandomizerFacade::from_core(rand::rngs::OsRng);
         let target_mail_folder = get_test_import_folder_id(&logged_in_sdk, MailSetKind::Archive)
             .await

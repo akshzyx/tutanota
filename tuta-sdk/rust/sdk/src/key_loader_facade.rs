@@ -5,7 +5,6 @@ use crate::entities::generated::sys::{Group, GroupKey};
 use crate::typed_entity_client::TypedEntityClient;
 #[cfg_attr(test, mockall_double::double)]
 use crate::user_facade::UserFacade;
-use crate::util::Versioned;
 use crate::CustomId;
 use crate::GeneratedId;
 use crate::ListLoadDirection;

@@ -256,7 +256,7 @@ impl TutaImapClient {
 	// command continuation request
 	fn process_cmd_continutation_response(
 		&self,
-		cmd_continutation_response: CommandContinuationRequest,
+		_cmd_continutation_response: CommandContinuationRequest,
 	) -> Result<(), ()> {
 		Ok(())
 	}
@@ -275,7 +275,7 @@ impl TutaImapClient {
 					self.unreceived_status
 						.insert(tag.to_static(), body.to_static());
 				},
-				Status::Bye(response_bye) => {
+				Status::Bye(_response_bye) => {
 					log::warn!("Received bye from server. byeeeee.");
 					self.connection_state = ConnectionState::Logout;
 				},
@@ -547,7 +547,7 @@ mod tests {
 		assert_eq!(StatusKind::Ok, import_client.fetch_mail_by_uid(message_id));
 
 		let imap_mail = import_client.latest_mails.get(&message_id).unwrap();
-		let parsed_mail = mail_parser::MessageParser::new()
+		let _parsed_mail = mail_parser::MessageParser::new()
 			.parse(imap_mail.rfc822_full.as_slice())
 			.unwrap();
 		// assert_eq!(

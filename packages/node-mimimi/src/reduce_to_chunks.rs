@@ -16,11 +16,8 @@ where
 {
     type Item = Vec<Element>;
     fn next(&mut self) -> Option<Self::Item> {
-        let mut seq = &mut self.inner;
-        let element = seq.peek();
-        let Some(mut element) = element else {
-            return None;
-        };
+        let seq = &mut self.inner;
+        let mut element = seq.peek()?;
 
         let mut chunk: Vec<Element> = Vec::new();
         let mut current_chunk_size = 0_usize;
@@ -53,7 +50,7 @@ where
 /// chunks size is calculated by summing up the elements sizes as given by the sizer function.
 ///
 /// the number of chunks is not guaranteed to be optimal.
-pub fn reduce_to_chunks<'element, Element: 'element>(mut seq: impl Iterator<Item=Element>, max_size: usize, sizer: Box<dyn Fn(&Element) -> usize>) -> impl Iterator<Item=Vec<Element>> {
+pub fn reduce_to_chunks<'element, Element: 'element>(seq: impl Iterator<Item=Element>, max_size: usize, sizer: Box<dyn Fn(&Element) -> usize>) -> impl Iterator<Item=Vec<Element>> {
     ChunkingIterator { inner: seq.peekable(), max_size, sizer }
 }
 
