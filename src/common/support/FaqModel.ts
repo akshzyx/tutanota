@@ -31,7 +31,8 @@ export class FaqModel {
 	private currentLanguageCode: string | null = null
 	private faqLanguages: LanguageViewModelType | null = null
 	private lazyLoaded: LazyLoaded<void>
-	private readonly websiteBaseUrl: string = assertNotNull(env.websiteUrl)
+	private static readonly websiteBaseUrl: string = assertNotNull(env.websiteUrl)
+
 	private get faqLang(): LanguageViewModel {
 		if (this.faqLanguages == null) {
 			throw new ProgrammingError("faq not initialized!")
@@ -44,11 +45,29 @@ export class FaqModel {
 			return Promise.all([this.fetchFAQ("en"), this.fetchFAQ(lang.code)]).then(([defaultTranslations, currentLanguageTranslations]) => {
 				if (defaultTranslations != null || currentLanguageTranslations != null) {
 					const faqLanguageViewModel = new LanguageViewModel()
-					faqLanguageViewModel.initWithTranslations(lang.code, lang.languageTag, defaultTranslations, currentLanguageTranslations)
+					const isProd = FaqModel.websiteBaseUrl === "https://tuta.com"
+					faqLanguageViewModel.initWithTranslations(
+						lang.code,
+						lang.languageTag,
+						isProd ? defaultTranslations : FaqModel.replaceWebsiteUrls(defaultTranslations),
+						isProd ? defaultTranslations : FaqModel.replaceWebsiteUrls(currentLanguageTranslations),
+					)
 					this.faqLanguages = faqLanguageViewModel
 				}
 			})
 		})
+	}
+
+	// Replaces any instances of the production website in the faq entry with the correct stage (test, local etc.) of the website
+	private static replaceWebsiteUrls(translation: Translation): Translation {
+		const filteredKeys: Record<string, string> = Object.fromEntries(
+			Object.entries(translation.keys).map((entry) => {
+				const key = entry[0]
+				const value = entry[1].replaceAll("https://tuta.com", FaqModel.websiteBaseUrl)
+				return [key, value]
+			}),
+		)
+		return { code: translation.code, keys: filteredKeys }
 	}
 
 	async init(): Promise<void> {
@@ -98,7 +117,7 @@ export class FaqModel {
 	 * fetch the entries for the given lang code from the web site
 	 */
 	private async fetchFAQ(langCode: string): Promise<Translation> {
-		const faqPath = `${this.websiteBaseUrl}/faq-entries/${langCode}.json`
+		const faqPath = `${FaqModel.websiteBaseUrl}/faq-entries/${langCode}.json`
 		const translations: Record<string, string> = await fetch(faqPath)
 			.then((response) => response.json())
 			.then((language) => language.keys)
