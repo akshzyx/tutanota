@@ -67,8 +67,8 @@ impl<'a> Serializer for &'a mut SizeEstimatingSerializer {
         unimplemented!("serialize_i32");
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        unimplemented!("serialize_i64");
+    fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
+        Ok((v + 1).ilog10() as usize + 1)
     }
 
     fn serialize_u8(self, _v: u8) -> Result<Self::Ok, Self::Error> {
