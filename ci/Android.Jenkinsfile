@@ -5,7 +5,6 @@ pipeline {
 		PATH = "${env.NODE_PATH}:${env.PATH}:/home/jenkins/emsdk/upstream/bin/:/home/jenkins/emsdk/:/home/jenkins/emsdk/upstream/emscripten"
 		ANDROID_SDK_ROOT = "/opt/android-sdk-linux"
 		ANDROID_HOME = "/opt/android-sdk-linux"
-		GITHUB_RELEASE_PAGE = "https://github.com/tutao/tutanota/releases/tag/tutanota-android-release-${VERSION}"
 	}
 
 	agent {
@@ -23,11 +22,6 @@ pipeline {
 					"Uploads both to Nexus and creates a new release on google play, " +
 					"which must be manually published from play.google.com/console"
 		)
-		persistentText(
-			name: "releaseNotes",
-			defaultValue: "",
-			description: "release notes for this build"
-		 )
 	}
 
 	stages {
@@ -124,26 +118,6 @@ pipeline {
 									assetFilePath: "${WORKSPACE}/build/app-android/tutanota-app-tutao-releaseTest-${VERSION}.apk",
 									fileExtension: 'apk'
 							)
-
-							catchError(stageResult: 'UNSTABLE', buildResult: 'SUCCESS', message: 'Failed to upload android test app to Play Store') {
-								// This doesn't publish to the main app on play store,
-								// instead it gets published to the hidden "tutanota-test" app
-								// this happens because the AppId is set to de.tutao.tutanota.test by the android build
-								// and play store knows which app to publish just based on the id
-								androidApkUpload(
-										googleCredentialsId: 'android-app-publisher-credentials',
-										apkFilesPattern: "build/app-android/tutanota-app-tutao-releaseTest-${VERSION}.apk",
-										trackName: 'internal',
-										rolloutPercentage: '100%',
-										recentChangeList: [
-												[
-														language: "en-US",
-														text    : "see: ${GITHUB_RELEASE_PAGE}"
-												]
-										]
-								) // androidApkUpload
-							} // catchError
-
 						}
 					}
 				} // stage testing
@@ -163,48 +137,9 @@ pipeline {
 									assetFilePath: "${WORKSPACE}/${filePath}",
 									fileExtension: 'apk'
 							)
-
-							androidApkUpload(
-									googleCredentialsId: 'android-app-publisher-credentials',
-									apkFilesPattern: "${filePath}",
-									trackName: 'production',
-									// Don't publish the app to users directly
-									// It will require manual intervention at play.google.com/console
-									rolloutPercentage: '0%',
-									recentChangeList: [
-											[
-													language: "en-US",
-													text    : "see: ${GITHUB_RELEASE_PAGE}"
-											]
-									]
-							)
 						}
 					}
 				} // stage production
-			}
-		}
-		stage('Tag and publish release page') {
-			when {
-				expression { return params.RELEASE }
-			}
-			steps {
-				// Needed to upload it
-				unstash 'apk-production'
-
-				script {
-					def filePath = "build/app-android/tutanota-app-tutao-release-${VERSION}.apk"
-
-					writeFile file: "notes.txt", text: params.releaseNotes
-					catchError(stageResult: 'UNSTABLE', buildResult: 'SUCCESS', message: 'Failed to create github release page for android') {
-						withCredentials([string(credentialsId: 'github-access-token', variable: 'GITHUB_TOKEN')]) {
-							sh """node buildSrc/createReleaseDraft.js --name '${VERSION} (Android)' \
-																   --tag 'tutanota-android-release-${VERSION}' \
-																   --uploadFile '${WORKSPACE}/${filePath}' \
-																   --notes notes.txt"""
-						} // withCredentials
-					} // catchError
-					sh "rm notes.txt"
-				} // script
 			}
 		}
 	}

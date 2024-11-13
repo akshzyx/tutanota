@@ -16,8 +16,8 @@
 default_platform(:ios)
 
 platform :ios do
-	desc "Push a new prod release to AppStore"
-	lane :appstore_prod do |options|
+	desc "Build a new Mail prod release with AppStore configuration"
+	lane :build_mail_prod do |options|
 		match(
 			app_identifier: ["de.tutao.tutanota", "de.tutao.tutanota.TutanotaShareExtension", "de.tutao.tutanota.TutanotaNotificationExtension"],
 			type: "appstore",
@@ -37,17 +37,21 @@ platform :ios do
 			include_symbols: true,
 			verbose: true
 		)
-		if options[:submit]
-			upload_to_app_store(
-				skip_screenshots: true,
-				submit_for_review: false,
-				precheck_include_in_app_purchases: false,
-				# must use force as long as we don't automatically create html previews
-				force: true,
-				api_key_path: ENV["API_KEY_JSON_FILE_PATH"]
-			)
-		end
 	end
+
+   desc "Publish a Mail artifact to AppStore"
+   lane :publish_mail_prod do |options|
+        sh 'echo "Uploading mail artifact ' + options[:file] + '"'
+
+        upload_to_app_store(
+            skip_screenshots: true,
+            submit_for_review: false,
+            precheck_include_in_app_purchases: false,
+            # must use force as long as we don't automatically create html previews
+            force: true,
+            api_key_path: ENV["API_KEY_JSON_FILE_PATH"]
+        )
+   end
 
 	desc "Build a new prod release for ad-hoc"
 	lane :adhoc_prod do |options|
