@@ -105,7 +105,7 @@ impl FileImport {
 			.message_parser
 			.parse(email_contents.as_slice())
 			.ok_or_else(|| FileIterationError::MessageParseError("todo1".to_string()))?;
-		let importable_mail = ImportableMail::try_from(parsed_message)
+		let importable_mail = ImportableMail::try_from(&parsed_message)
 			.map_err(|e| FileIterationError::MessageParseError(format!("{e:?}")))?;
 		Ok(importable_mail)
 	}

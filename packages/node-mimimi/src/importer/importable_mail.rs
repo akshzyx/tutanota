@@ -1,9 +1,11 @@
 use crate::tuta_imap::client::types::ImapMail;
 use extend_mail_parser::MakeString;
+use mail_builder::headers::Header;
 use mail_parser::{
-	Address, GetHeader, HeaderName, HeaderValue, MessageParser, MessagePart, MessagePartId,
-	MimeHeaders, PartType,
+	Address, ContentType, GetHeader, HeaderValue, Message, MessageParser, MessagePart,
+	MessagePartId, MimeHeaders, PartType,
 };
+use regex::Regex;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
@@ -52,18 +54,13 @@ pub(super) enum ReplyType {
 	ReplyForward = 3,
 }
 
-#[cfg_attr(test, derive(PartialEq, Debug))]
-pub(super) enum ImportableMailAttachment {
-	Attachment {
-		filename: Option<String>,
-		content_type: String,
-		content_id: String,
-		content: Vec<u8>,
-		is_inline: bool,
-	},
-	AttachedMessage {
-		message: ImportableMail,
-	},
+#[cfg_attr(test, derive(PartialEq, Debug, Clone))]
+pub(super) struct ImportableMailAttachment {
+	filename: String,
+	content_id: Option<String>,
+	content_type: String,
+	content: Vec<u8>,
+	is_inline: bool,
 }
 
 #[cfg_attr(test, derive(PartialEq, Debug))]
@@ -171,18 +168,6 @@ impl ImportableMail {
 		email_body_as_html.push_str(html_text);
 	}
 
-	fn handle_attached_message(
-		attachments: &mut Vec<ImportableMailAttachment>,
-		attached_message: mail_parser::Message,
-	) -> Result<(), MailParseError> {
-		let importable_mail = ImportableMail::try_from(attached_message)?;
-		let this_attachment = ImportableMailAttachment::AttachedMessage {
-			message: importable_mail,
-		};
-		attachments.push(this_attachment);
-		Ok(())
-	}
-
 	// from the parsed message
 	// return :
 	// .0 a single string that ca be display as email in html format
@@ -201,73 +186,62 @@ impl ImportableMail {
 				continue;
 			}
 
-			// if not boundary attribute is defined in Content-Type, then the text is treated as comment.
-			// see: russian.msg
-			let probably_unbounded_message =
-				parsed_message.attachments.contains(&part_id) && part_id == 0;
-
 			match &part.body {
-				PartType::Html(_) | PartType::Text(_) if probably_unbounded_message => {
-					// is this a comment in mime?
-					continue;
+				PartType::Binary(binary_content) => {
+					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), false);
 				},
 
-				PartType::Binary(binary_content) | PartType::InlineBinary(binary_content) => {
-					let is_inline = if matches!(part.body, PartType::InlineBinary(_)) {
-						true
-					} else if matches!(part.body, PartType::Binary(_)) {
-						false
-					} else {
-						unreachable!();
-					};
-					Self::handle_binary(
-						&mut attachments,
-						&part.headers,
-						binary_content.to_vec(),
-						is_inline,
-					);
+				PartType::InlineBinary(binary_content) => {
+					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), true);
 				},
 
 				// todo: of it is PartType::Text & PartType::Html, check for ConentDisposition Header
 				// and if it is attachment, treat it as attachment
 				PartType::Text(text) => {
-					let is_text_plain = part
-						.content_type()
-						.map(|content_type| {
-							let subtype = content_type.subtype().unwrap_or({
-								// what do we do with the content-type: text
-								// with no subtype
-								// for now assume plain
-								if content_type.c_type == "text" {
-									"plain"
-								} else {
-									""
-								}
+					let has_attachment_content_disposition = part
+						.content_disposition()
+						.map(|content_disposition| content_disposition.c_type == "attachment")
+						.unwrap_or_default();
+
+					let is_text_plain = !has_attachment_content_disposition
+						&& part
+							.content_type()
+							.map(|content_type| {
+								let subtype = content_type.subtype().unwrap_or({
+									// what do we do with the content-type: text
+									// with no subtype
+									// for now assume plain
+									if content_type.c_type == "text" {
+										"plain"
+									} else {
+										""
+									}
+								});
+
+								let is_text_plain =
+									content_type.c_type == "text" && subtype == "plain";
+								// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+								// subtype of the multipart Content-Type.
+								// This type is syntactically identical to multipart/mixed, but the
+								// semantics are different. In particular, in a digest, the default
+								// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
+								let is_message_rfc822 =
+									content_type.c_type == "message" && subtype == "rfc833";
+
+								is_text_plain || is_message_rfc822
+							})
+							.unwrap_or({
+								// what should we treat text that is not content-Type: text?
+								// fow now let's assume it's content-type: text/plain
+								true
 							});
 
-							let is_text_plain = content_type.c_type == "text" && subtype == "plain";
-							// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
-							// subtype of the multipart Content-Type.
-							// This type is syntactically identical to multipart/mixed, but the
-							// semantics are different. In particular, in a digest, the default
-							// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
-							let is_message_rfc822 =
-								content_type.c_type == "message" && subtype == "rfc833";
-
-							is_text_plain || is_message_rfc822
-						})
-						.unwrap_or({
-							// what should we treat text that is not content-Type: text?
-							// fow now let's assume it's content-type: text/plain
-							true
-						});
-
-					if is_text_plain {
+					if is_text_plain && !has_attachment_content_disposition {
 						Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
 					} else {
 						Self::handle_binary(
+							part,
 							&mut attachments,
-							&part.headers,
 							text.as_bytes().to_vec(),
 							false,
 						);
@@ -279,7 +253,7 @@ impl ImportableMail {
 				},
 
 				PartType::Message(attached_message) => {
-					Self::handle_attached_message(&mut attachments, attached_message.to_owned())?;
+					let ignored_result = Self::handle_message(&mut attachments, attached_message);
 				},
 
 				PartType::Multipart(multi_part_ids) => {
@@ -294,6 +268,53 @@ impl ImportableMail {
 		}
 
 		Ok((email_body_as_html, attachments))
+	}
+
+	fn get_filename(part: &MessagePart, fallback_name: &str) -> String {
+		let content_disposition_filename = part
+			.content_disposition()
+			.map(|c| c.attribute("filename").map(ToString::to_string))
+			.flatten();
+		let content_type_filename = part
+			.content_type()
+			.map(|c| c.attribute("name").map(ToString::to_string))
+			.flatten();
+
+		let file_name = content_disposition_filename.unwrap_or_else(|| {
+			content_type_filename.unwrap_or_else(|| {
+				let filename_suffix = part
+					.content_type()
+					.map(Self::get_suffix_from_content_type)
+					.unwrap_or_default();
+				fallback_name.to_string() + filename_suffix
+			})
+		});
+		Self::escape_filename(&file_name).to_string()
+	}
+
+	/// Creates a filename from the given filename that is valid on Linux and Windows. Invalid
+	/// characters are replaced by "_"
+	fn escape_filename(file_name: &str) -> Cow<str> {
+		let regex = Regex::new("[\\\\/:*?<>\"|]").unwrap();
+		regex.replace(file_name, "_")
+	}
+
+	fn get_suffix_from_content_type(content_type: &ContentType) -> &'static str {
+		if content_type.c_type == "message" {
+			if content_type.subtype() == Some("rfc822") {
+				".eml"
+			} else {
+				".txt"
+			}
+		} else if content_type.c_type == "text" {
+			if content_type.subtype() == Some("calendar") {
+				".ics"
+			} else {
+				".txt"
+			}
+		} else {
+			""
+		}
 	}
 
 	fn handle_multipart(
@@ -391,53 +412,65 @@ impl ImportableMail {
 	}
 
 	fn handle_binary(
+		part: &MessagePart,
 		attachments: &mut Vec<ImportableMailAttachment>,
-		header_values: &Vec<mail_parser::Header<'_>>,
-		binary_content: Vec<u8>,
+		content: Vec<u8>,
 		is_inline: bool,
 	) {
-		let content_type = header_values.header(HeaderName::ContentType).map(|c| {
-			c.value
-				.as_content_type()
-				.expect("Content type should be of type ContentType")
-		});
-		let content_type_attributes = content_type
-			// get attributes_of_content_type if content-type is there
-			.and_then(mail_parser::ContentType::attributes)
-			// if can-not get attributes, default to empty list of attributes
-			.unwrap_or_default();
-		let filename = content_type_attributes
-			.iter()
-			// find a attribute name filename
-			.filter(|(attribute_name, _)| attribute_name == "filename")
-			.map(|(_, file_name)| file_name.to_string())
-			// first attribute called 'filename'
-			.next();
-
-		let content_id = header_values
-			.header_value(&HeaderName::ContentId)
-			.map(|content_type_header| {
-				content_type_header
-					.as_text()
-					.expect("Content-Id header should be of type text")
-			})
-			.unwrap_or("binary")
-			.to_string();
-
-		let content_type = content_type
+		let content_id = part.content_id().map(ToString::to_string);
+		let filename = Self::get_filename(part, "unknown");
+		let content_type = part
+			.content_type()
 			.map(MakeString::make_string)
-			.unwrap_or_default()
+			.map(Cow::into_owned)
+			.unwrap_or_else(|| Self::default_content_type().make_string().into_owned())
 			.to_string();
 
-		let content = binary_content.to_vec();
-		let this_attachment = ImportableMailAttachment::Attachment {
+		let content = content.to_vec();
+		let attachment = ImportableMailAttachment {
 			filename,
 			content_type,
 			content_id,
 			is_inline,
 			content,
 		};
-		attachments.push(this_attachment);
+
+		attachments.push(attachment);
+	}
+
+	fn handle_message(
+		attachments: &mut Vec<ImportableMailAttachment>,
+		message: &Message,
+	) -> Result<(), MailParseError> {
+		let filename =
+			Self::get_filename(&message.parts[0], &message.subject().unwrap_or("unknown"));
+		let content_type = message
+			.content_type()
+			.map(MakeString::make_string)
+			.unwrap_or_default()
+			.to_string();
+
+		let nested_part = &message.parts[0];
+		let content =
+			message.raw_message[nested_part.offset_header..nested_part.offset_end].to_vec();
+		let attachment = ImportableMailAttachment {
+			filename,
+			content_type,
+			content,
+			is_inline: false,
+			content_id: None,
+		};
+		attachments.push(attachment);
+		Ok(())
+	}
+
+	fn default_content_type() -> ContentType<'static> {
+		let default_content_type = ContentType {
+			c_type: Cow::Borrowed("text"),
+			c_subtype: Some(Cow::Borrowed("plain")),
+			attributes: Some(vec![(Cow::Borrowed("charset"), Cow::Borrowed("us-ascii"))]),
+		};
+		default_content_type
 	}
 }
 
@@ -533,7 +566,7 @@ impl TryFrom<ImapMail> for ImportableMail {
 			.parse(rfc822_full.as_slice())
 			.ok_or(MailParseError::InvalidMimeMessage)?;
 
-		let mut importable_mail = Self::try_from(imap_mail)?;
+		let mut importable_mail = Self::try_from(&imap_mail).unwrap();
 
 		// example:
 		// add more details from imap if given,
@@ -559,10 +592,10 @@ pub enum MailParseError {
 }
 
 /// allow to convert from parsed message
-impl<'x> TryFrom<mail_parser::Message<'x>> for ImportableMail {
+impl<'x> TryFrom<&mail_parser::Message<'x>> for ImportableMail {
 	type Error = MailParseError;
 
-	fn try_from(parsed_message: mail_parser::Message) -> Result<Self, Self::Error> {
+	fn try_from(parsed_message: &mail_parser::Message) -> Result<Self, Self::Error> {
 		let subject = parsed_message.subject().unwrap_or_default().to_string();
 
 		let (html_body_text, attachments) = ImportableMail::process_all_parts(&parsed_message)?;

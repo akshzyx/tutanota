@@ -1,6 +1,6 @@
 //! keep in sync with MimeToolsTestMessages.java
 
-use crate::importer::importable_mail::{ImportableMail, MailContact};
+use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::io::Read;
@@ -66,7 +66,7 @@ fn mime_tools_test_messages() {
 			result: expected_result,
 			exception: expected_exception,
 		} = FileContent::read_from_file(expected_json_file_name.as_str()).unwrap();
-		let parsed_message_result = ImportableMail::try_from(parsed_message.clone());
+		let parsed_message_result = ImportableMail::try_from(&parsed_message);
 
 		if expected_result.is_some() && expected_exception.is_none() {
 			let mut importable_mail = parsed_message_result.unwrap();
@@ -205,7 +205,7 @@ impl From<ExpectedMessage> for ImportableMail {
 			raw_message: Cow::Owned(headers_string_clone.as_bytes().to_vec()),
 		};
 
-		ImportableMail::try_from(parsed_mail).unwrap()
+		ImportableMail::try_from(&parsed_mail).unwrap()
 	}
 }
 

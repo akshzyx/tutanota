@@ -1,13 +1,12 @@
 //! Keep in sync with MimeStringToSmtpMessageConverterTest !
 
-use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
+use crate::importer::importable_mail::{ImportableMail, MailContact};
+use mail_parser::decoders::base64::base64_decode;
 use mail_parser::{MessageParser, MimeHeaders};
 use tutasdk::date::DateTime;
 
 fn parse_mail(msg: &str) -> ImportableMail {
-    MessageParser::default()
-        .parse(msg)
-        .unwrap()
+    (&MessageParser::default().parse(msg).unwrap())
         .try_into()
         .unwrap()
 }
@@ -113,7 +112,7 @@ Tutanota: äüöß€*#\{³|@"##;
     let m = parse_mail(msg);
 
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-    assert_eq!(m.to_addresses, vec![("b", "b@tutanota.de").into()]);
+    assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!("Hello", m.subject);
     assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
@@ -128,12 +127,12 @@ Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Tutanota: äüöß€*#\\{³|@"##;
+Tutanota: äüöß€*#\{³|@"##;
 
     let m = parse_mail(msg);
 
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-    assert_eq!(m.to_addresses, vec![("b", "b@tutanota.de").into()]);
+    assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!("Hello", m.subject);
     assert_eq!("Tutanota: äüöß€*#\\{³|@", m.html_body_text);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
@@ -457,45 +456,20 @@ Hello äöüß
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
 
     assert_eq!(m.attachments.len(), 1);
-    for attachment in m.attachments {
-        match attachment {
-            ImportableMailAttachment::Attachment { .. } => {
-                // todo:
-                // should we have got the attachment here or in AttachedMessage?
-            }
-            ImportableMailAttachment::AttachedMessage { message: attached } => {
-                assert_eq!(attached.from_addresses, vec![("D", "d@tutanota.de").into()]);
-                assert_eq!(attached.to_addresses, vec![("E", "e@tutanota.de").into()]);
-                assert_eq!(attached.subject, "attached message");
-                assert_eq!(attached.html_body_text, "Hello äöüß");
-                assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date)
-            }
-        }
-    }
-
-//     		assertEquals(new SmtpMailContact("A", "a@tutanota.de"), m.getSender());
-    // 		assertEquals(List.of(new SmtpMailContact("B", "b@tutanota.de")), m.getToRecipients());
-    // 		assertEquals("parent message", m.getSubject());
-    // 		assertEquals("normal message", m.getPlainBodyText());
-    // 		assertEquals(null, m.getHtmlBodyText());
-    // 		assertEquals(date, m.getSentDate());
-    //
-    // 		assertEquals(0, m.getAttachedMessages().size());
-    // 		assertEquals(1, m.getAttachedFiles().size());
-    // 		SmtpAttachment attachement = m.getAttachedFiles().get(0);
-    // 		SmtpMessage attached = mimeStringToSmtpMessageConverter.mimeToSmtpMessage(mimeStringToSmtpMessageConverter.dataToMimeMessage(attachement.getData()),
-    // 				null);
-    //
-    // 		assertEquals(new SmtpMailContact("D", "d@tutanota.de"), attached.getSender());
-    // 		assertEquals(List.of(new SmtpMailContact("E", "e@tutanota.de")), attached.getToRecipients());
-    // 		assertEquals("attached message", attached.getSubject());
-    // 		assertEquals("Hello äöüß", attached.getPlainBodyText());
-    // 		assertEquals(null, attached.getHtmlBodyText());
-    // 		assertEquals(yesterday, attached.getSentDate());
+    let attachment = m.attachments.first().unwrap();
+    let attached = parse_mail(
+        String::from_utf8(attachment.content.to_vec())
+            .unwrap()
+            .as_str(),
+    );
+    assert_eq!(attached.from_addresses, vec![("D", "d@tutanota.de").into()]);
+    assert_eq!(attached.to_addresses, vec![("E", "e@tutanota.de").into()]);
+    assert_eq!(attached.subject, "attached message");
+    assert_eq!(attached.html_body_text, "<br>Hello äöüß<br>");
 }
 
 #[test]
-fn attachments() {
+fn multiple_attachments() {
     let msg = r#"Subject: multiple attachments
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
@@ -531,38 +505,31 @@ c2Vjb25kIGF0dGFjaG1lbnQ=
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(m.subject, "multiple attachments");
 
+    assert_eq!("Hello äöüß", m.html_body_text);
+    assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
     assert_eq!(m.attachments.len(), 3);
-    todo!()
+    let [a1, a2, a3] = m.attachments.try_into().unwrap();
 
-//     		assertEquals("a@tutanota.de", m.getSender().getMailAddress());
-    // 		assertEquals("A", m.getSender().getName());
-    // 		assertEquals(1, m.getToRecipients().size());
-    // 		assertEquals("b@tutanota.de", m.getToRecipients().get(0).getMailAddress());
-    // 		assertEquals("B", m.getToRecipients().get(0).getName());
-    // 		assertEquals("multiple attachments", m.getSubject());
-    // 		assertEquals("Hello äöüß", m.getPlainBodyText());
-    // 		assertEquals(null, m.getHtmlBodyText());
-    // 		assertEquals(date, m.getSentDate());
-    //
-    // 		assertEquals(3, m.getAttachedFiles().size());
-    // 		SmtpAttachment a1 = m.getAttachedFiles().get(0);
-    // 		SmtpAttachment a2 = m.getAttachedFiles().get(1);
-    // 		SmtpAttachment a3 = m.getAttachedFiles().get(2);
-    //
-    // 		assertEquals("a1.txt", a1.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("Zmlyc3QgYXR0YWNobWVudA=="), a1.getData());
-    // 		assertEquals("application/octet-stream", a1.getMimeType());
-    // 		assertNull(a1.getCharset());
-    //
-    // 		assertEquals("a2.pdf", a2.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("c2Vjb25kIGF0dGFjaG1lbnQ="), a2.getData());
-    // 		assertEquals("application/pdf", a2.getMimeType());
-    // 		assertNull(a1.getCharset());
-    //
-    // 		assertEquals("withoutContentType.pdf", a3.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("c2Vjb25kIGF0dGFjaG1lbnQ="), a3.getData());
-    // 		assertEquals("text/plain", a3.getMimeType());
-    // 		assertNull(a1.getCharset());
+    assert_eq!("a1.txt", a1.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"Zmlyc3QgYXR0YWNobWVudA==").unwrap()).unwrap(),
+        String::from_utf8(a1.content.to_vec()).unwrap()
+    );
+    assert_eq!("application/octet-stream", a1.content_type);
+
+    assert_eq!("a2.pdf", a2.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"c2Vjb25kIGF0dGFjaG1lbnQ=").unwrap()).unwrap(),
+        String::from_utf8(a2.content.to_vec()).unwrap()
+    );
+    assert_eq!("application/pdf", a2.content_type);
+
+    assert_eq!("withoutContentType.pdf", a3.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"c2Vjb25kIGF0dGFjaG1lbnQ=").unwrap()).unwrap(),
+        String::from_utf8(a3.content.to_vec()).unwrap()
+    );
+    assert_eq!(r#"text/plain; charset="us-ascii""#, a3.content_type);
 }
 
 #[test]
@@ -594,7 +561,7 @@ Zmlyc3QgYXR0YWNobWVudA==
 
     todo!()
 
-//     		assertEquals(1, m.getAttachedFiles().size());
+    //     		assertEquals(1, m.getAttachedFiles().size());
     // 		SmtpAttachment a1 = m.getAttachedFiles().get(0);
     //
     // 		assertEquals("a1.png", a1.getName());
@@ -610,7 +577,7 @@ fn attachment_to_attached_message() {
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
-Content-Type: message/rfc822; charset=UTF-8;
+Content-Type: message/rfc822; charset=UTF-8
 
 Subject: attached message
 From: D <d@tutanota.de>
@@ -627,28 +594,26 @@ Zmlyc3QgYXR0YWNobWVudA==
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-    todo!()
+    assert_eq!(1, m.attachments.len());
 
-//     		assertEquals(null, m.getPlainBodyText());
-    // 		assertEquals(null, m.getHtmlBodyText());
-    //
-    // 		// messages are handled as attached files.
-    // 		assertEquals(0, m.getAttachedMessages().size());
-    // 		assertEquals(1, m.getAttachedFiles().size());
-    //
-    // 		SmtpAttachment attachedFile = m.getAttachedFiles().get(0);
-    // 		SmtpMessage attached = mimeStringToSmtpMessageConverter.mimeToSmtpMessage(mimeStringToSmtpMessageConverter.dataToMimeMessage(attachedFile.getData()),
-    // 				null);
-    //
-    // 		assertEquals("attached message", attached.getSubject());
-    // 		assertEquals(null, attached.getHtmlBodyText());
-    //
-    // 		assertEquals(0, attached.getAttachedMessages().size());
-    // 		assertEquals(1, attached.getAttachedFiles().size());
-    //
-    // 		SmtpAttachment indirectAttachment = attached.getAttachedFiles().get(0);
-    // 		assertEquals("indirectly_attached.txt", indirectAttachment.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("Zmlyc3QgYXR0YWNobWVudA=="), indirectAttachment.getData());
+    let attached = parse_mail(
+        String::from_utf8(m.attachments.first().unwrap().content.clone())
+            .unwrap()
+            .as_str(),
+    );
+
+    assert_eq!(attached.subject, "attached message");
+
+    assert_eq!("", attached.html_body_text);
+    assert_eq!(1, attached.attachments.len());
+
+    assert_eq!(1, attached.attachments.len());
+    let indirect_attachment = attached.attachments.first().unwrap();
+    assert_eq!("indirectly_attached.txt", indirect_attachment.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"Zmlyc3QgYXR0YWNobWVudA==").unwrap()).unwrap(),
+        String::from_utf8(indirect_attachment.content.to_vec()).unwrap()
+    );
 }
 
 #[test]
@@ -677,7 +642,7 @@ Abc, die Katze liegt im Schnee ! äöü?ß !
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
     todo!()
 
-//     		assertEquals("text attachment", m.getSubject());
+    //     	assertEquals("text attachment", m.getSubject());
     // 		assertEquals("Tutanota: äüöß€*#\\{³|@", m.getPlainBodyText());
     // 		assertEquals(null, m.getHtmlBodyText());
     // 		assertEquals(date, m.getSentDate());
@@ -715,7 +680,7 @@ Content-Disposition: attachment; filename=a1.html;
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
     todo!()
 
-//     		assertEquals("html attachment", m.getSubject());
+    //     		assertEquals("html attachment", m.getSubject());
     // 		assertEquals("Tutanota: äüöß€*#\\{³|@", m.getPlainBodyText());
     // 		assertEquals(null, m.getHtmlBodyText());
     // 		assertEquals(date, m.getSentDate());
@@ -761,7 +726,7 @@ second plain text in body
         text_contents
     );
 
-//     		String firstPlainBodyText = "Tutanota: äüöß€*#\\{³|@";
+    //     		String firstPlainBodyText = "Tutanota: äüöß€*#\\{³|@";
     // 		String secondPlainBodyText = "Abc, die Katze liegt im Schnee ! äöü?ß !";
     // 		StringBuilder b = new StringBuilder()
     // 				.append("Subject: multiple text/plain parts concatenated\n")
@@ -842,7 +807,7 @@ Content-Type: text/html; charset=UTF-8
 
 --line--
 "#;
-    let _m = parse_mail(msg);
+    let m = parse_mail(msg);
     todo!()
 }
 
@@ -869,7 +834,7 @@ first plain text in body
 --line--
 "#;
 
-    let _m = parse_mail(msg);
+    let m = parse_mail(msg);
     todo!()
 }
 
@@ -904,7 +869,7 @@ Abc, die Katze liegt im Schnee ! äöü?ß !
     );
     todo!()
 
-//     		assertEquals("multiple text/html and text/plain parts concatenated to single text/html", m.getSubject());
+    //     		assertEquals("multiple text/html and text/plain parts concatenated to single text/html", m.getSubject());
     // 		String concatenatedHtmlBodyText = firstHtmlBodyText.concat(secondHtmlBodyText).concat(PlainTextHtmlConverter.plainTextToHtml(firstPlainBodyText));
     // 		assertEquals(null, m.getPlainBodyText());
     // 		assertEquals(concatenatedHtmlBodyText, m.getHtmlBodyText());
@@ -922,9 +887,9 @@ fn plain_body_text_parts_are_converted_to_html_body_parts_if_html_body_parts_fol
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
+    todo!()
 
-//     		assertEquals("multiple plain/text and text/html parts concatenated to single text/html", m.getSubject());
+    //     		assertEquals("multiple plain/text and text/html parts concatenated to single text/html", m.getSubject());
     // 		String concatenatedHtmlBodyText = PlainTextHtmlConverter.plainTextToHtml(firstPlainBodyText).concat(firstHtmlBodyText).concat(secondHtmlBodyText);
     // 		assertEquals(null, m.getPlainBodyText());
     // 		assertEquals(concatenatedHtmlBodyText, m.getHtmlBodyText());
@@ -937,7 +902,7 @@ fn text_attachment_with_disposition() {
     let msg = r#"Subject: text attachment
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
-Date: " + new MailDateFormat().format(date) + "
+Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: text/plain; charset=UTF-8
 Content-Disposition: attachment; filename=a1.txt;
 
@@ -948,9 +913,9 @@ Abc, die Katze liegt im Schnee ! äöü?ß !
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
+    todo!()
 
-//     		assertEquals("text attachment", m.getSubject());
+    //     		assertEquals("text attachment", m.getSubject());
     // 		assertNull(m.getPlainBodyText());
     // 		assertNull(m.getHtmlBodyText());
     // 		assertEquals(date, m.getSentDate());
@@ -964,10 +929,10 @@ Abc, die Katze liegt im Schnee ! äöü?ß !
 
 #[test]
 fn attachment_with_non_ascii_name() {
-	let msg = r#"Subject: text attachment
+    let msg = r#"Subject: text attachment
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
-Date: " + new MailDateFormat().format(date) + "
+Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: text/plain; charset=UTF-8; name=\"=?ISO-8859-1?Q?a=F6i=2Epdf?=\"
 Content-Disposition: attachment; filename*=ISO-8859-1''%61%F6%69%2E%70%64%66
 
@@ -977,15 +942,13 @@ Abc, die Katze liegt im Schnee ! äöü?ß ! "#;
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
-
-//     		SmtpAttachment a1 = m.getAttachedFiles().get(0);
-    // 		assertEquals("aöi.pdf", a1.getName());
+    assert_eq!(1, m.attachments.len());
+    assert_eq!("aöi.pdf", m.attachments.first().unwrap().filename);
 }
 
 #[test]
 fn attachment_filename_in_content_type() {
-	let msg = r#"Subject: message with named file attachment
+    let msg = r#"Subject: message with named file attachment
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
@@ -998,18 +961,22 @@ Zmlyc3QgYXR0YWNobWVudA=="#;
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
-//     		SmtpAttachment indirectAttachment = m.getAttachedFiles().get(0);
-    // 		assertEquals("indirectly_attached.txt", indirectAttachment.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("Zmlyc3QgYXR0YWNobWVudA=="), indirectAttachment.getData());
+
+    assert_eq!(1, m.attachments.len());
+    let indirect_attachment = m.attachments.first().unwrap();
+    assert_eq!("indirectly_attached.txt", indirect_attachment.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"Zmlyc3QgYXR0YWNobWVudA==").unwrap()).unwrap(),
+        String::from_utf8(indirect_attachment.content.to_vec()).unwrap()
+    );
 }
 
 #[test]
 fn attachment_filename_qencoding() {
-	let msg = r#"Subject: message with named file attachment
+    let msg = r#"Subject: message with named file attachment
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
-Date: " + new MailDateFormat().format(date) + "
+Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: application/octet-stream; name==?utf-8?Q?=C3=A4=C3=B6=C3=9F=E2=82=AC.txt?=;
 Content-Transfer-Encoding: base64
 
@@ -1019,16 +986,19 @@ Zmlyc3QgYXR0YWNobWVudA=="#;
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
 
-// 		SmtpAttachment indirectAttachment = m.getAttachedFiles().get(0);
-    // 		assertEquals("äöß€.txt", indirectAttachment.getName());
-    // 		assertArrayEquals(EncodingConverter.base64ToBytes("Zmlyc3QgYXR0YWNobWVudA=="), indirectAttachment.getData());
+    assert_eq!(1, m.attachments.len());
+    let indirect_attachment = m.attachments.first().unwrap();
+    assert_eq!("äöß€.txt", indirect_attachment.filename);
+    assert_eq!(
+        String::from_utf8(base64_decode(b"Zmlyc3QgYXR0YWNobWVudA==").unwrap()).unwrap(),
+        String::from_utf8(indirect_attachment.content.to_vec()).unwrap()
+    );
 }
 
 #[test]
 fn encrypted() {
-	let msg = r#"Subject: Hello
+    let msg = r#"Subject: Hello
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
@@ -1045,41 +1015,43 @@ SGFsbG8=
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
     assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
+    assert_eq!(1, m.attachments.len());
 
-//     		assertEquals(1, m.getAttachedFiles().size());
+    //     		assertEquals(1, m.getAttachedFiles().size());
 }
 
 #[test]
 fn recipient_groups() {
-	let msg = r#"Subject: Hello
+    let msg = r#"Subject: Hello
 From: A <a@tutanota.de>
 To: foo:a@b.example.de,c@d.example.de,e@f.example.de;
 Reply-To: ??? <???@tutanota.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100"#;
-    let m: ImportableMail = parse_mail(msg);
+    let m = parse_mail(msg);
 
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-    assert_eq!(m.to_addresses, vec![("B", "b@tutanota.de").into()]);
+    assert_eq!(
+        m.to_addresses,
+        vec![
+            ("", "a@b.example.de").into(),
+            ("", "c@d.example.de").into(),
+            ("", "e@f.example.de").into()
+        ]
+    );
     assert_eq!(Some(DateTime::from_millis(1730991244000)), m.date);
-	todo!()
-
-//     		assertEquals("a@b.example.de", m.getToRecipients().get(0).getMailAddress());
-    // 		assertEquals("c@d.example.de", m.getToRecipients().get(1).getMailAddress());
-    // 		assertEquals("e@f.example.de", m.getToRecipients().get(2).getMailAddress());
 }
 
 #[test]
 fn undisclosed_recipients() {
-	let msg = r#"To: undisclosed-recipients:;"#;
-	let m: ImportableMail = parse_mail(msg);
+    let msg = r#"To: undisclosed-recipients:;"#;
+    let m = parse_mail(msg);
 
-	assert!(m.to_addresses.is_empty());
+    assert_eq!(0, m.to_addresses.len());
 }
 
 #[test]
 fn long_content_type() {
-	let msg = r#"From: A <a@tutanota.de>
+    let msg = r#"From: A <a@tutanota.de>
 Content-type: multipart/mixed; boundary=frontier
 
 --frontier
@@ -1089,18 +1061,19 @@ Content-Disposition: attachment; filename=withoutContentType.pdf;
 Message
 --frontier--
 "#;
-    let _m: ImportableMail = parse_mail(msg);
+    let m = parse_mail(msg);
 
-	todo!()
-//     		assertEquals("text/plain", m.getAttachedFiles().get(0).getMimeType());
-    // 		assertEquals("us-ascii", m.getAttachedFiles().get(0).getCharset());
-    // 		assertEquals("withoutContentType.pdf", m.getAttachedFiles().get(0).getName());
+    let attachment = m.attachments.first().unwrap();
+    assert_eq!("withoutContentType.pdf", attachment.filename);
+    assert_eq!("text/plain", attachment.content_type);
+    todo!()
+    // assertEquals("us-ascii", m.getAttachedFiles().get(0).getCharset());
 }
 
 #[test]
 fn normalize_header_value() {
     todo!()
-// 		// trim and remove LF and CR
+    // 		// trim and remove LF and CR
     // 		assertArrayEquals(new String[]{"a@b"}, MimeStringToSmtpMessageConverter.stripMessageIds(" <a@b>").toArray(new String[0]));
     // 		assertArrayEquals(new String[]{"a@b"}, MimeStringToSmtpMessageConverter.stripMessageIds("<a@b> ").toArray(new String[0]));
     // 		assertArrayEquals(new String[]{"a@b"}, MimeStringToSmtpMessageConverter.stripMessageIds(" \r <a@b> \n ").toArray(new String[0]));
@@ -1133,8 +1106,7 @@ fn get_spf_result() {
 
 #[test]
 fn mail_from_with_delemiter() {
-    let msg = r#"
-Message-ID: 123456
+    let msg = r#"Message-ID: 123456
 Subject: Hello
 From: A,B <a@external.de>
 To: B <b@tutanota.de>
@@ -1144,37 +1116,31 @@ Content-Type: multipart/mixed; boundary=frontier
 
 --frontier
 "#;
-    let _m: ImportableMail = parse_mail(msg);
+    let m = parse_mail(msg);
 
-	todo!()
-//     		assertEquals("A, B <a@external.de>", m.getSender().getMailAddress());
+    todo!()
+    //     		assertEquals("A, B <a@external.de>", m.getSender().getMailAddress());
     // 		assertEquals("", m.getSender().getName());
     // 		assertFalse(m.getSender().isValid());
 }
 
 #[test]
 fn incomplete_text_content_type() {
-    let msg = r#"
-Subject: Hello
+    let msg = r#"Subject: Hello
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-type: text
 
-any body text
+any body text"#;
+    let m = parse_mail(msg);
 
-
---frontier
-"#;
-    let _m: ImportableMail = parse_mail(msg);
-
-	todo!()
-//     		assertEquals("any body text", m.getPlainBodyText());
+    assert_eq!("any body text", m.html_body_text);
 }
 
 #[test]
 fn calendar_content_type() {
-	let msg = r#"Message-ID: 123456
+    let msg = r#"Message-ID: 123456
 Subject: Hello
 From: A <a@tutanota.de>
 To: B <b@tutanota.de>
@@ -1182,13 +1148,11 @@ References: <sadf@tutanota.de> <1234564@web.de>
 Date: Thu, 7 Nov 2024 15:54:04 +0100
 Content-Type: text/calendar; charset=\"UTF-8\"; method=REQUEST
 "#;
-    let _m: ImportableMail = parse_mail(msg);
+    let m = parse_mail(msg);
 
-	todo!()
-//     		assertEquals("a@tutanota.de", m.getSender().getMailAddress());
-    // 		assertEquals("A", m.getSender().getName());
-    // 		assertEquals("text/calendar", m.getAttachedFiles().get(0).getMimeType());
-    // 		assertEquals("REQUEST", m.getAttachedFiles().get(0).getCalendarMethod());
+    assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
+    assert_eq!("text/calendar", m.attachments.first().unwrap().content_type);
+    // assertEquals("REQUEST", m.getAttachedFiles().get(0).getCalendarMethod());
 }
 
 #[test]
@@ -1204,13 +1168,9 @@ Content-Type: text/calendar; charset="UTF-8"; method=request;
     let m: ImportableMail = parse_mail(msg);
 
     assert_eq!(m.from_addresses, vec![("A", "a@tutanota.de").into()]);
-    match m.attachments.first().unwrap() {
-        ImportableMailAttachment::Attachment { content_type, .. } => {
-            assert_eq!("text/calendar", content_type);
-            // todo! assert_eq!("REQUEST", calendar_method)
-        }
-        ImportableMailAttachment::AttachedMessage { .. } => { panic!("") }
-    };
+    let attachment = m.attachments.first().unwrap();
+    assert_eq!("text/calendar", attachment.content_type);
+    // todo! assert_eq!("REQUEST", calendar_method)
 }
 
 #[test]
@@ -1221,12 +1181,15 @@ fn invalid_content_types_default_to_text_plain() {
         "Content-Type: text",
         "Content-Type; text/html",
         "Content-Type; invalid/type",
-        "Content-Type: application/pdf; no_parameter_name.pdf"
+        "Content-Type: application/pdf; no_parameter_name.pdf",
     ];
     for invalid_content_type in invalid_content_types {
         let parsed = MessageParser::default()
             .parse(invalid_content_type)
             .unwrap();
-        assert_eq!("text/plain", parsed.content_type().unwrap().c_type.to_string());
+        assert_eq!(
+            "text/plain",
+            parsed.content_type().unwrap().c_type.to_string()
+        );
     }
 }
