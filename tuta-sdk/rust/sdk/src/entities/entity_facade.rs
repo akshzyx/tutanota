@@ -289,7 +289,7 @@ impl EntityFacadeImpl {
         mut entity: ParsedEntity,
         session_key: &GenericAesKey,
     ) -> Result<ParsedEntity, ApiCallError> {
-        let mut mapped_decrypted: HashMap<String, ElementValue> = Default::default();
+        let mut mapped_decrypted: ParsedEntity = Default::default();
         let mut mapped_errors: Errors = Default::default();
         let mut mapped_ivs: HashMap<String, ElementValue> = Default::default();
 
@@ -1070,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_instance() {
+    fn encrypt_and_map_instance() {
         let sk = GenericAesKey::Aes256(Aes256Key::from_bytes(KNOWN_SK.as_slice()).unwrap());
         let owner_enc_session_key = [0, 1, 2];
 
@@ -1293,7 +1293,7 @@ mod tests {
         assert_eq!(default_subject.as_bytes(), encrypted_subject.as_slice());
     }
 
-    fn map_to_string(map: &HashMap<String, ElementValue>) -> String {
+    fn map_to_string(map: &ParsedEntity) -> String {
         let mut out = String::new();
         let sorted_map: BTreeMap<String, ElementValue> = map.clone().into_iter().collect();
         for (key, value) in &sorted_map {

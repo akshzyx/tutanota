@@ -54,7 +54,7 @@ impl JsonSerializer {
         mut raw_entity: RawEntity,
     ) -> Result<ParsedEntity, InstanceMapperError> {
         let type_model = self.get_type_model(type_ref)?;
-        let mut mapped: HashMap<String, ElementValue> = HashMap::new();
+		let mut mapped: ParsedEntity = HashMap::new();
         for (&value_name, value_type) in &type_model.values {
             // reuse the name
             let (value_name, value) =

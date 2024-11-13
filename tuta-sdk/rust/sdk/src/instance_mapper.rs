@@ -548,7 +548,7 @@ struct ElementValueSerializer;
 
 enum ElementValueStructSerializer {
 	Struct {
-		map: HashMap<String, ElementValue>,
+		map: ParsedEntity,
 	},
 	IdTupleGenerated {
 		list_id: Option<GeneratedId>,
@@ -888,7 +888,7 @@ impl SerializeStruct for ElementValueStructSerializer {
 /// Yet Another Serializer, this one serializes a map with dynamic keys.
 struct ElementValueMapSerializer {
 	next_key: Option<String>,
-	map: HashMap<String, ElementValue>,
+	map: ParsedEntity,
 }
 
 impl SerializeMap for ElementValueMapSerializer {
