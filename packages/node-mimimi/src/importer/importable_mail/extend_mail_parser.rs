@@ -147,7 +147,7 @@ impl<'a> MakeString for mail_parser::ContentType<'a> {
 		}
 		if let Some(attribute_str) = attribute_str {
 			if !content_type.is_empty() {
-				content_type.push_str("; ");
+				content_type.push_str(";");
 			}
 			content_type.push_str(attribute_str.as_str());
 		}

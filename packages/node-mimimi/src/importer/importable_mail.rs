@@ -198,45 +198,7 @@ impl ImportableMail {
 				// todo: of it is PartType::Text & PartType::Html, check for ConentDisposition Header
 				// and if it is attachment, treat it as attachment
 				PartType::Text(text) => {
-					let has_attachment_content_disposition = part
-						.content_disposition()
-						.map(|content_disposition| content_disposition.c_type == "attachment")
-						.unwrap_or_default();
-
-					let is_text_plain = !has_attachment_content_disposition
-						&& part
-							.content_type()
-							.map(|content_type| {
-								let subtype = content_type.subtype().unwrap_or({
-									// what do we do with the content-type: text
-									// with no subtype
-									// for now assume plain
-									if content_type.c_type == "text" {
-										"plain"
-									} else {
-										""
-									}
-								});
-
-								let is_text_plain =
-									content_type.c_type == "text" && subtype == "plain";
-								// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
-								// subtype of the multipart Content-Type.
-								// This type is syntactically identical to multipart/mixed, but the
-								// semantics are different. In particular, in a digest, the default
-								// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
-								let is_message_rfc822 =
-									content_type.c_type == "message" && subtype == "rfc833";
-
-								is_text_plain || is_message_rfc822
-							})
-							.unwrap_or({
-								// what should we treat text that is not content-Type: text?
-								// fow now let's assume it's content-type: text/plain
-								true
-							});
-
-					if is_text_plain && !has_attachment_content_disposition {
+					if !Self::is_attachment(part) && Self::is_plain_text(part) {
 						Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
 					} else {
 						Self::handle_binary(
@@ -249,7 +211,16 @@ impl ImportableMail {
 				},
 
 				PartType::Html(html_text) => {
-					Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
+					if !Self::is_attachment(part) {
+						Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
+					} else {
+						Self::handle_binary(
+							part,
+							&mut attachments,
+							html_text.as_bytes().to_vec(),
+							false,
+						);
+					}
 				},
 
 				PartType::Message(attached_message) => {
@@ -268,6 +239,35 @@ impl ImportableMail {
 		}
 
 		Ok((email_body_as_html, attachments))
+	}
+
+	fn is_plain_text(part: &MessagePart) -> bool {
+		part.content_type()
+			.map(|content_type| {
+				let subtype = content_type.subtype();
+				let is_text_plain = content_type.c_type == "text"
+					&& (subtype == Some("plain") || subtype.is_none());
+				// edu: https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+				// subtype of the multipart Content-Type.
+				// This type is syntactically identical to multipart/mixed, but the
+				// semantics are different. In particular, in a digest, the default
+				// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
+				let is_message_rfc822 =
+					content_type.c_type == "message" && subtype == Some("rfc833");
+
+				is_text_plain || is_message_rfc822
+			})
+			.unwrap_or({
+				// what should we treat text that is not content-Type: text?
+				// fow now let's assume it's content-type: text/plain
+				true
+			})
+	}
+
+	fn is_attachment(part: &MessagePart) -> bool {
+		part.content_disposition()
+			.map(|content_disposition| content_disposition.c_type == "attachment")
+			.unwrap_or_default()
 	}
 
 	fn get_filename(part: &MessagePart, fallback_name: &str) -> String {
