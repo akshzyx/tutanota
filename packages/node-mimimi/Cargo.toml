@@ -55,3 +55,7 @@ javascript = ["dep:napi-derive"]
 [[example]]
 name = "import_imap_mail"
 path = "examples/import_imap_mail.rs"
+
+[[example]]
+name = "import_eml_mail"
+path = "examples/import_eml_mail.rs"
