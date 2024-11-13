@@ -1,8 +1,9 @@
 //! keep in sync with MimeToolsTestMessages.java
 
-use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
+use crate::importer::importable_mail::{ImportableMail, MailContact};
 use serde::Deserialize;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io::Read;
 
 #[test]
@@ -11,46 +12,33 @@ fn mime_tools_test_messages() {
 	let source_message_paths = std::fs::read_dir(DATA_DIR)
 		.unwrap()
 		.map(Result::unwrap)
-		.map(|p| p.file_name().to_str().unwrap().to_string())
-		.filter(|p| p.ends_with(".msg"));
-
-	// everything else is related to multipart i suppose,
-	const IGNORED_FILES: &[&str] = &[
-		"multi-igor.msg",
-		"multi-bad.msg",
-		"multi-digest.msg",
-		"2002_06_12_doublebound.msg",
-		"attachment-filename-encoding-Latin1.msg",
-		"attachment-filename-encoding-UTF8.msg",
-		"multi-digest.msg",
-		"multi-igor2.msg",
-		"multi-nested.msg",
-		"multi-nested3.msg",
-		"multi-nested2.msg",
-		"infinite.msg", // have encoding problem
-	];
-
-	for message_file_name in source_message_paths
 		.filter(|p| {
-			IGNORED_FILES
-				.iter()
-				.filter(|f| f.starts_with(p.as_str()))
-				.next()
-				.is_none()
-		})
-		.chain(IGNORED_FILES.iter().map(|s| {
-			eprintln!("Ignored file: ");
-			s.to_string()
-		}))
-		.map(|a| {
-			eprintln!("{a} .....Testing");
-			a
-		}) {
-		let message_path = format!("{DATA_DIR}/{message_file_name}");
+			p.path()
+				.into_os_string()
+				.into_string()
+				.unwrap()
+				.ends_with(".msg")
+		});
+
+	let ignored_files = [
+		"infinite.msg", // encoding not specified so we are falling back to us-ascii but message contains chars encoded in different charset
+		"multi-digest.msg", // body correctly interpreted as message/rfc822 (due to multipart/digest) whereas the server seems to default to plain/text even for multipart/digest
+		"multi-bad.msg", // first part is not ignored because of duplicate content-type header, java parser opts for first content-type whereas rust mime-parser uses second content-type header
+	]
+	.into_iter()
+	.collect::<HashSet<_>>();
+
+	for message_file_path in source_message_paths {
+		eprintln!("File: {:?}", message_file_path);
+		let message_filename = message_file_path.file_name().into_string().unwrap();
+		if ignored_files.contains(message_filename.as_str()) {
+			eprintln!("ignored..");
+			continue;
+		}
 
 		// let message_file_content = std::fs::r(&message_path.path()).unwrap()
 		let mut message_file_content = vec![];
-		std::fs::File::open(message_path.as_str())
+		std::fs::File::open(message_file_path.path())
 			.unwrap()
 			.read_to_end(&mut message_file_content)
 			.unwrap();
@@ -60,7 +48,7 @@ fn mime_tools_test_messages() {
 
 		let expected_json_file_name = format!(
 			"{DATA_DIR}/{}",
-			message_file_name.replace(".msg", "-expected.json")
+			message_filename.replace(".msg", "-expected.json")
 		);
 		let FileContent {
 			result: expected_result,

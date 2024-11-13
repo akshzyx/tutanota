@@ -185,7 +185,6 @@ impl ImportableMail {
 			if multipart_ignored_alternative.contains(&part_id) {
 				continue;
 			}
-
 			match &part.body {
 				PartType::Binary(binary_content) => {
 					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), false);
@@ -195,10 +194,9 @@ impl ImportableMail {
 					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), true);
 				},
 
-				// todo: of it is PartType::Text & PartType::Html, check for ConentDisposition Header
-				// and if it is attachment, treat it as attachment
 				PartType::Text(text) => {
-					if !Self::is_attachment(part) && Self::is_plain_text(part) {
+					if !Self::is_attachment(&email_body_as_html, part) && Self::is_plain_text(part)
+					{
 						Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
 					} else {
 						Self::handle_binary(
@@ -211,7 +209,7 @@ impl ImportableMail {
 				},
 
 				PartType::Html(html_text) => {
-					if !Self::is_attachment(part) {
+					if !Self::is_attachment(&email_body_as_html, part) {
 						Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
 					} else {
 						Self::handle_binary(
@@ -253,9 +251,9 @@ impl ImportableMail {
 				// semantics are different. In particular, in a digest, the default
 				// Content-Type value for a body part is changed from "text/plain" to "message/rfc822".
 				let is_message_rfc822 =
-					content_type.c_type == "message" && subtype == Some("rfc833");
+					content_type.c_type == "message" && subtype == Some("rfc822");
 
-				is_text_plain || is_message_rfc822
+				is_text_plain || (is_message_rfc822)
 			})
 			.unwrap_or({
 				// what should we treat text that is not content-Type: text?
@@ -264,10 +262,11 @@ impl ImportableMail {
 			})
 	}
 
-	fn is_attachment(part: &MessagePart) -> bool {
+	fn is_attachment(email_body_as_html: &String, part: &MessagePart) -> bool {
 		part.content_disposition()
 			.map(|content_disposition| content_disposition.c_type == "attachment")
 			.unwrap_or_default()
+			|| (!email_body_as_html.is_empty() && part.content_id().is_some())
 	}
 
 	fn get_filename(part: &MessagePart, fallback_name: &str) -> String {
@@ -326,11 +325,7 @@ impl ImportableMail {
 		let is_multipart_alternative = part
 			.content_type()
 			.map(|content_type| {
-				assert_eq!(
-					"multipart", content_type.c_type,
-					"Multipart is not multipart?"
-				);
-				content_type.subtype() == Some("alternative")
+				content_type.c_type == "multipart" && content_type.subtype() == Some("alternative")
 			})
 			.unwrap_or_default();
 
@@ -446,6 +441,7 @@ impl ImportableMail {
 			Self::get_filename(&message.parts[0], &message.subject().unwrap_or("unknown"));
 		let content_type = message
 			.content_type()
+			.ok_or_else(|| Self::default_content_type())
 			.map(MakeString::make_string)
 			.unwrap_or_default()
 			.to_string();
