@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 /// How to: Import IMAP mail from Greenmail to TutaMail
 ///
 ///
@@ -71,15 +73,20 @@ async fn main() {
 		.system_folder_by_type(MailSetKind::Inbox)
 		.expect("inbox should exist");
 
+	let id = logged_in_sdk
+		.mail_facade()
+		.get_group_id_for_mail_address("map-free@tutanota.de")
+		.await
+		.unwrap();
 	let mut importer = ImporterApi::new(
 		logged_in_sdk,
-		import_source,
-		"map-free@tutanota.de".to_string(),
-		inbox_folder._id.clone(),
+		id,
+		inbox_folder._id.clone().unwrap(),
+		Arc::new(Mutex::new(import_source)),
 	);
 
 	let import_status = importer
-		.continue_import()
+		.continue_import_inner()
 		.await
 		.expect("Cannot complete import");
 	assert!(ImportState::Finished == import_status.state,);
