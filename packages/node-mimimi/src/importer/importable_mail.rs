@@ -642,7 +642,8 @@ impl<'x> TryFrom<&mail_parser::Message<'x>> for ImportableMail {
 			// different envelope sender should not contain address listed in from_addresses;
 			.filter(|diff_sender| {
 				from_addresses
-					.iter().any(|from| from.mail_address != diff_sender.mail_address)
+					.iter()
+					.any(|from| from.mail_address != diff_sender.mail_address)
 			})
 			.map(|mail_address| mail_address.mail_address);
 

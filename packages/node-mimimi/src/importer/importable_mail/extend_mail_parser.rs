@@ -12,9 +12,11 @@ pub(super) fn get_reply_type_from_headers<'a>(headers: &'a [mail_parser::Header<
 			if header.value().make_string().trim().is_empty() {
 				is_forward = true;
 			}
-		} else if header.name == HeaderName::References && header.value().make_string().trim().is_empty() {
-  				is_reply = true;
-  			}
+		} else if header.name == HeaderName::References
+			&& header.value().make_string().trim().is_empty()
+		{
+			is_reply = true;
+		}
 		if is_reply && is_forward {
 			break;
 		}
