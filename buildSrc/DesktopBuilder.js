@@ -12,7 +12,7 @@ import util from "node:util"
 import typescript from "@rollup/plugin-typescript"
 import { copyNativeModulePlugin, nativeBannerPlugin } from "./nativeLibraryRollupPlugin.js"
 import { fileURLToPath } from "node:url"
-import { getCanonicalPlatformName } from "./buildUtils.js"
+import { getCanonicalPlatformName, getWebsiteUrl } from "./buildUtils.js"
 import { domainConfigs } from "./DomainConfigs.js"
 import commonjs from "@rollup/plugin-commonjs"
 
@@ -30,9 +30,10 @@ const projectRoot = path.resolve(path.join(buildSrc, ".."))
  * @param notarize for the MacOs notarization feature
  * @param outDir where copy the finished artifacts
  * @param unpacked output desktop client without packing it into an installer
+ * @param stage Deployment for which to build: 'prod' will build for the production system, 'test' for the test system, 'local' will use local.
  * @returns {Promise<void>}
  */
-export async function buildDesktop({ dirname, version, platform, architecture, updateUrl, nameSuffix, notarize, outDir, unpacked, disableMinify }) {
+export async function buildDesktop({ dirname, version, platform, architecture, updateUrl, nameSuffix, notarize, outDir, unpacked, disableMinify, stage }) {
 	// The idea is that we
 	// - build desktop code into build/desktop
 	// - package the whole dist directory into the app
@@ -78,7 +79,7 @@ export async function buildDesktop({ dirname, version, platform, architecture, u
 	}
 
 	console.log("Bundling desktop client")
-	await rollupDesktop(dirname, path.join(distDir, "desktop"), version, platform, architecture, disableMinify)
+	await rollupDesktop(dirname, path.join(distDir, "desktop"), version, platform, architecture, disableMinify, stage)
 
 	console.log("Starting installer build...")
 	if (process.platform.startsWith("darwin")) {
@@ -115,8 +116,9 @@ export async function buildDesktop({ dirname, version, platform, architecture, u
 	])
 }
 
-async function rollupDesktop(dirname, outDir, version, platform, architecture, disableMinify) {
+async function rollupDesktop(dirname, outDir, version, platform, architecture, disableMinify, stage) {
 	platform = getCanonicalPlatformName(platform)
+	const websiteUrl = getWebsiteUrl(stage)
 	const mainBundle = await rollup({
 		input: [path.join(dirname, "src/common/desktop/DesktopMain.ts"), path.join(dirname, "src/common/desktop/sqlworker.ts")],
 		// some transitive dep of a transitive dev-dep requires https://www.npmjs.com/package/url
@@ -142,7 +144,7 @@ async function rollupDesktop(dirname, outDir, version, platform, architecture, d
 			}),
 			commonjs(),
 			disableMinify ? undefined : terser(),
-			preludeEnvPlugin(createEnv({ staticUrl: null, websiteUrl: null, version, mode: "Desktop", dist: true, domainConfigs })),
+			preludeEnvPlugin(createEnv({ staticUrl: null, websiteUrl, version, mode: "Desktop", dist: true, domainConfigs })),
 			nativeBannerPlugin({
 				// Relative to the source file from which the .node file is loaded.
 				// In our case it will be desktop/DesktopMain.js, which is located in the same directory.

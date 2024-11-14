@@ -79,7 +79,7 @@ export async function runDevBuild({ stage, host, desktop, clean, ignoreMigration
 	await buildWebPart({ stage, host, version, domainConfigs: extendedDomainConfigs, app })
 
 	if (desktop) {
-		await buildDesktopPart({ version, app })
+		await buildDesktopPart({ version, app, stage })
 	}
 }
 
@@ -158,9 +158,10 @@ importScripts("./worker.js")
 	})
 }
 
-async function buildDesktopPart({ version, app }) {
+async function buildDesktopPart({ version, app, stage }) {
 	const isCalendarBuild = app === "calendar"
 	const buildDir = isCalendarBuild ? "build-calendar-app" : "build"
+	const websiteUrl = getWebsiteUrl(stage)
 
 	await runStep("Desktop: Esbuild", async () => {
 		await esbuild({
@@ -186,7 +187,7 @@ globalThis.buildOptions.sqliteNativePath = "./better-sqlite3.node";`,
 					architecture: process.arch,
 					nativeBindingPath: "./better_sqlite3.node",
 				}),
-				preludeEnvPlugin(env.create({ staticUrl: null, websiteUrl: null, version, mode: "Desktop", dist: false, domainConfigs })),
+				preludeEnvPlugin(env.create({ staticUrl: null, websiteUrl, version, mode: "Desktop", dist: false, domainConfigs })),
 				externalTranslationsPlugin(),
 			],
 		})

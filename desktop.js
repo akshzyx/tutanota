@@ -109,6 +109,7 @@ async function buildDesktopClient(version, { stage, host, platform, architecture
 		outDir: outDir,
 		unpacked: unpacked,
 		disableMinify,
+		stage,
 	}
 	const websiteUrl = getWebsiteUrl(stage)
 
@@ -124,6 +125,7 @@ async function buildDesktopClient(version, { stage, host, platform, architecture
 				nameSuffix: "-test",
 				// Do not notarize test build
 				notarize: false,
+				stage,
 			})
 			await createHtml(env.create({ staticUrl: tutaTestUrl, websiteUrl, version, mode: "Desktop", dist: true, domainConfigs }))
 			await buildDesktop(desktopTestOpts)
@@ -140,6 +142,7 @@ async function buildDesktopClient(version, { stage, host, platform, architecture
 			updateUrl: `http://${addr}:9000/desktop/desktop-snapshot`,
 			nameSuffix: "-snapshot",
 			notarize: false,
+			stage,
 		})
 		await createHtml(env.create({ staticUrl: `http://${addr}:9000`, websiteUrl, version, mode: "Desktop", dist: true, domainConfigs }))
 		await buildDesktop(desktopLocalOpts)
@@ -158,6 +161,7 @@ async function buildDesktopClient(version, { stage, host, platform, architecture
 			version,
 			updateUrl: "http://localhost:9000/desktop",
 			notarize: false,
+			stage,
 		})
 		await createHtml(env.create({ staticUrl: tutaAppUrl, websiteUrl, version, mode: "Desktop", dist: true, domainConfigs }))
 		await buildDesktop(desktopProdOpts)
@@ -168,6 +172,7 @@ async function buildDesktopClient(version, { stage, host, platform, architecture
 			updateUrl: `${host}/desktop/desktop-snapshot`,
 			nameSuffix: "-snapshot",
 			notarize: false,
+			stage,
 		})
 		await createHtml(env.create({ staticUrl: host, websiteUrl, version, mode: "Desktop", dist: true, domainConfigs }))
 		await buildDesktop(desktopHostOpts)
