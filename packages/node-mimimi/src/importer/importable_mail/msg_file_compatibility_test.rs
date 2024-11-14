@@ -1,10 +1,13 @@
 //! keep in sync with MimeToolsTestMessages.java
 
-use crate::importer::importable_mail::{ImportableMail, MailContact};
+use crate::importer::importable_mail::plain_text_to_html_converter::plain_text_to_html;
+use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment, MailContact};
+use mail_parser::decoders::base64::base64_decode;
 use serde::Deserialize;
-use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::Read;
+use tutasdk::date::DateTime;
+use tutasdk::entities::generated::tutanota::ImportMailData;
 
 #[test]
 fn mime_tools_test_messages() {
@@ -21,16 +24,19 @@ fn mime_tools_test_messages() {
 		});
 
 	let ignored_files = [
-		"infinite.msg", // encoding not specified so we are falling back to us-ascii but message contains chars encoded in different charset
-		"multi-digest.msg", // body correctly interpreted as message/rfc822 (due to multipart/digest) whereas the server seems to default to plain/text even for multipart/digest
-		"multi-bad.msg", // first part is not ignored because of duplicate content-type header, java parser opts for first content-type whereas rust mime-parser uses second content-type header
+		// encoding not specified so we are falling back to us-ascii but message contains chars encoded in different charset
+		"infinite.msg",
+		// body correctly interpreted as message/rfc822 (due to multipart/digest) whereas the server seems to default to plain/text even for multipart/digest
+		"multi-digest.msg",
+		// first part is not ignored because of duplicate content-type header, java parser opts for first content-type whereas rust mime-parser uses second content-type header
+		"multi-bad.msg",
 	]
 	.into_iter()
 	.collect::<HashSet<_>>();
 
 	for message_file_path in source_message_paths {
-		eprintln!("File: {:?}", message_file_path);
 		let message_filename = message_file_path.file_name().into_string().unwrap();
+		eprintln!("File: {message_filename}");
 		if ignored_files.contains(message_filename.as_str()) {
 			eprintln!("ignored..");
 			continue;
@@ -52,148 +58,108 @@ fn mime_tools_test_messages() {
 		);
 		let FileContent {
 			result: expected_result,
-			exception: expected_exception,
+			exception: _,
 		} = FileContent::read_from_file(expected_json_file_name.as_str()).unwrap();
 		let parsed_message_result = ImportableMail::try_from(&parsed_message);
 
-		if expected_result.is_some() && expected_exception.is_none() {
-			let mut importable_mail = parsed_message_result.unwrap();
-			let mut expected_importable_mail = ImportableMail::from(expected_result.unwrap());
-
-			importable_mail.attachments.clear();
-			expected_importable_mail.attachments.clear();
-
-			// we import raw headers and there is no need to compare them
-			importable_mail.headers_string = "".to_string();
-			expected_importable_mail.headers_string = "".to_string();
-
-			assert_eq!(importable_mail, expected_importable_mail);
-		} else if expected_exception.is_some() && expected_result.is_none() {
-			// check that the parsing have failed,
-			// but we cannot check for the actual reason in `expected_exception`
-			//
-			//
-			// todo: should not badbound.msg fail on mail_parser::parse thing? why is it failing in ImportableMail::try_from()?
-			//assert!(parsed_message_result.is_err());
-		} else if expected_result.is_none() && expected_exception.is_none() {
-			unreachable!()
-		} else if expected_exception.is_some() && expected_exception.is_some() {
-			unreachable!()
-		} else {
-			unreachable!()
+		if expected_result.is_none() {
+			eprintln!("has error......");
+			continue;
 		}
+
+		let parsed_message = parsed_message_result.unwrap();
+		let mut importable_mail: ImportMailData = parsed_message.into();
+		let mut expected_importable_mail: ImportMailData = expected_result.unwrap().into();
+
+		// importable_mail.attachments.clear();
+		// expected_importable_mail.attachments.clear();
+
+		// we import raw headers and there is no need to compare them
+		importable_mail.compressedHeaders.clear();
+		expected_importable_mail.compressedHeaders.clear();
+
+		// we don't cover date headers in server as well.
+		// .msg and -expected.json do not share same date seems like
+		importable_mail.date = DateTime::default();
+		expected_importable_mail.date = DateTime::default();
+
+		// todo:
+		// we don't have different envelope sender in -expected.json
+		importable_mail.differentEnvelopeSender = None;
+
+		assert_eq!(importable_mail, expected_importable_mail);
 	}
 }
 
 impl From<TestMailAddress> for MailContact {
 	fn from(value: TestMailAddress) -> Self {
 		let TestMailAddress {
-			name, mail_address, ..
+			name,
+			mail_address,
+			valid: _,
 		} = value;
 		Self { mail_address, name }
 	}
 }
 
-impl From<ExpectedMessage> for ImportableMail {
-	fn from(mut expected_message: ExpectedMessage) -> Self {
-		// add a new line at end of headers for mail_parser::MessageParser::parse_headers
-		expected_message.mail_headers.push_str("\n");
-
-		let headers_string_clone = expected_message.mail_headers.clone();
-
-		let mut body_parts = vec![];
-		let mut plain_body_ids = vec![];
-		let mut html_body_ids = vec![];
-		let mut attachment_ids = vec![];
-
-		let parsed_headers_res = mail_parser::MessageParser::default()
-			.parse_headers(expected_message.mail_headers.as_str())
-			.unwrap();
-
-		let root_part = mail_parser::MessagePart {
-			headers: parsed_headers_res.headers().to_vec(),
-			is_encoding_problem: false,
-			body: mail_parser::PartType::Text(Cow::Borrowed("")),
-			encoding: Default::default(),
-			offset_header: 0,
-			offset_body: 0,
-			offset_end: 0,
-		};
-		body_parts.push(root_part);
-
-		if let Some(html_body_part) = expected_message.html_body_text {
-			let html_body_converted = mail_parser::MessagePart {
-				headers: vec![],
-				is_encoding_problem: false,
-				body: mail_parser::PartType::Html(Cow::Owned(html_body_part)),
-				encoding: Default::default(),
-				offset_header: 0,
-				offset_body: 0,
-				offset_end: 0,
-			};
-			html_body_ids.push(body_parts.len());
-			body_parts.push(html_body_converted);
+impl From<ExpectedMessage> for ImportMailData {
+	fn from(expected_message: ExpectedMessage) -> Self {
+		ImportableMail {
+			headers_string: expected_message.mail_headers,
+			subject: expected_message.subject,
+			html_body_text: expected_message.html_body_text.clone().unwrap_or(
+				expected_message
+					.plain_body_text
+					.map(|plain| plain_text_to_html(&plain))
+					.unwrap_or_default(),
+			),
+			attachments: expected_message
+				.attached_files
+				.into_iter()
+				.map(|f| ImportableMailAttachment {
+					filename: f.name,
+					content_id: Some(f.content_id),
+					content_type: "".to_string(),
+					content: base64_decode(f.data.as_bytes()).unwrap(),
+					is_inline: false,
+				})
+				.collect(),
+			date: expected_message
+				.sent_date
+				.map(|timestamp| DateTime::from_millis(timestamp as u64)),
+			different_envelope_sender: None,
+			from_addresses: vec![expected_message.sender.into()],
+			to_addresses: expected_message
+				.to_recipients
+				.into_iter()
+				.map(Into::into)
+				.collect(),
+			cc_addresses: expected_message
+				.cc_recipients
+				.into_iter()
+				.map(Into::into)
+				.collect(),
+			bcc_addresses: expected_message
+				.bcc_recipients
+				.into_iter()
+				.map(Into::into)
+				.collect(),
+			reply_to_addresses: expected_message
+				.reply_to
+				.into_iter()
+				.map(Into::into)
+				.collect(),
+			ical_type: Default::default(),
+			reply_type: Default::default(),
+			mail_state: Default::default(),
+			is_phishing: false,
+			unread: false,
+			message_id: expected_message.id,
+			in_reply_to: expected_message.in_reply_to,
+			references: expected_message.references,
 		}
-		// if there is both plain text and html in json file,
-		// probably that json if to test multipart/alternative ( todo: is this true? )
-		// and since we always select html in multipart/alternative,
-		// we can skip adding plain text if html text was set.
-		// hence the `else if let` instead of `if let`
-		else if let Some(plain_body_part) = expected_message.plain_body_text {
-			let plain_body_converted = mail_parser::MessagePart {
-				headers: vec![],
-				is_encoding_problem: false,
-				body: mail_parser::PartType::Text(Cow::Owned(plain_body_part)),
-				encoding: Default::default(),
-				offset_header: 0,
-				offset_body: 0,
-				offset_end: 0,
-			};
-			plain_body_ids.push(body_parts.len());
-			body_parts.push(plain_body_converted);
-		}
-
-		for _attached_message in expected_message.attached_messages {
-			let attached_message_converted = mail_parser::MessagePart {
-				headers: vec![],
-				is_encoding_problem: false,
-				body: Default::default(),
-				encoding: Default::default(),
-				offset_header: 0,
-				offset_body: 0,
-				offset_end: 0,
-			};
-			attachment_ids.push(body_parts.len());
-			body_parts.push(attached_message_converted);
-		}
-
-		for _attached_file in expected_message.attached_files {
-			let attached_file_converted = mail_parser::MessagePart {
-				headers: vec![],
-				is_encoding_problem: false,
-				body: Default::default(),
-				encoding: Default::default(),
-				offset_header: 0,
-				offset_body: 0,
-				offset_end: 0,
-			};
-			attachment_ids.push(body_parts.len());
-			body_parts.push(attached_file_converted);
-		}
-
-		let parsed_mail = mail_parser::Message {
-			html_body: html_body_ids,
-			text_body: plain_body_ids,
-			attachments: attachment_ids,
-			parts: body_parts,
-			// todo:
-			// will only work for .raw_header(), if we use other _raw function or
-			// try to access .raw_message in From<Message>: ImportableMail,
-			// this won't work
-			raw_message: Cow::Owned(headers_string_clone.as_bytes().to_vec()),
-		};
-
-		ImportableMail::try_from(&parsed_mail).unwrap()
+		.try_into()
+		.unwrap()
 	}
 }
 

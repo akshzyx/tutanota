@@ -8,7 +8,6 @@ use mail_parser::{
 use regex::Regex;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::time::SystemTime;
 use tutasdk::date::DateTime;
 use tutasdk::entities::generated::tutanota::{
     EncryptedMailAddress, ImportMailData, ImportMailDataMailReference, MailAddress, Recipients,
@@ -494,8 +493,6 @@ impl From<ImportableMail> for (ImportMailData, Vec<ImportableMailAttachment>) {
             attachments,
         } = importable_mail;
 
-        let date = date.unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
-
         let reply_tos = reply_to_addresses
             .into_iter()
             .map(|reply_to| EncryptedMailAddress {
@@ -542,7 +539,8 @@ impl From<ImportableMail> for (ImportMailData, Vec<ImportableMailAttachment>) {
             method: ical_type as i64,
             phishingStatus: if is_phishing { 1 } else { 0 },
             replyType: reply_type as i64,
-            date,
+			// if no date is provided, use UNIX_EPOCH (01.01.1970) as fallback
+			date: date.unwrap_or_default(),
             state: mail_state as i64,
             messageId: message_id,
             inReplyTo: in_reply_to,
