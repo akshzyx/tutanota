@@ -55,7 +55,7 @@ export type UpgradeSubscriptionData = {
 	// On iOS: in the local currency
 	// Else: in Euro
 	displayPrice: string
-	priceNextYear: string | null
+	nextYearDisplayPrice: string | null
 	accountingInfo: AccountingInfo | null
 	// not initially set for signup but loaded in InvoiceAndPaymentDataPage
 	customer: Customer | null
@@ -104,7 +104,7 @@ export async function showUpgradeWizard(logins: LoginController, acceptedPlans: 
 		price: "",
 		displayPrice: "",
 		type: PlanType.Revolutionary,
-		priceNextYear: null,
+		nextYearDisplayPrice: null,
 		accountingInfo: accountingInfo,
 		customer: customer,
 		newAccountData: null,
@@ -192,7 +192,7 @@ export async function loadSignupWizard(
 		},
 		price: "",
 		displayPrice: "",
-		priceNextYear: null,
+		nextYearDisplayPrice: null,
 		type: PlanType.Free,
 		accountingInfo: null,
 		customer: null,

@@ -128,7 +128,7 @@ export class UpgradeSubscriptionPage implements WizardPageN<UpgradeSubscriptionD
 				this.__signupFreeTest?.getStage(1).complete()
 				data.type = PlanType.Free
 				data.price = "0"
-				data.priceNextYear = "0"
+				data.nextYearDisplayPrice = "0"
 				this.showNextPage()
 			}
 		})
@@ -211,8 +211,8 @@ export class UpgradeSubscriptionPage implements WizardPageN<UpgradeSubscriptionD
 			const subscriptionPrice = planPrices.getSubscriptionPriceWithCurrency(options.paymentInterval(), data.type, UpgradePriceType.PlanActualPrice)
 			data.price = subscriptionPrice.rawPrice
 			data.displayPrice = subscriptionPrice.displayPrice
-			const nextYear = planPrices.getSubscriptionPriceWithCurrency(options.paymentInterval(), data.type, UpgradePriceType.PlanNextYearsPrice).displayPrice
-			data.priceNextYear = data.price !== nextYear ? nextYear : null
+			const nextYear = planPrices.getSubscriptionPriceWithCurrency(options.paymentInterval(), data.type, UpgradePriceType.PlanNextYearsPrice)
+			data.nextYearDisplayPrice = data.price !== nextYear.rawPrice ? nextYear.displayPrice : null
 		} catch (e) {
 			console.error(e)
 			Dialog.message("appStoreNotAvailable_msg")

@@ -189,10 +189,10 @@ export class UpgradeConfirmSubscriptionPage implements WizardPageN<UpgradeSubscr
 	}
 
 	private renderPriceNextYear(attrs: WizardPageAttrs<UpgradeSubscriptionData>) {
-		return attrs.data.priceNextYear
+		return attrs.data.nextYearDisplayPrice
 			? m(TextField, {
 					label: "priceForNextYear_label",
-					value: buildPriceString(attrs.data.priceNextYear, attrs.data.options),
+					value: buildPriceString(attrs.data.nextYearDisplayPrice, attrs.data.options),
 					isReadOnly: true,
 			  })
 			: null
