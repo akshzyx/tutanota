@@ -67,7 +67,8 @@ export class FaqModel {
 				return [key, value]
 			}),
 		)
-		return { code: translation.code, keys: filteredKeys }
+		// Expand translation to include extra fields, e.g. `name`
+		return { ...translation, code: translation.code, keys: filteredKeys }
 	}
 
 	async init(): Promise<void> {
