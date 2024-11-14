@@ -151,7 +151,7 @@ export class InvoiceAndPaymentDataPage implements WizardPageN<UpgradeSubscriptio
 								a.data.paymentData,
 								null,
 								a.data.upgradeType === UpgradeType.Signup,
-								a.data.price,
+								neverNull(a.data.price?.rawPrice),
 								neverNull(a.data.accountingInfo),
 							).then((success) => {
 								if (success) {
