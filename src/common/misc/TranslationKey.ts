@@ -1103,6 +1103,7 @@ export type TranslationKeyType =
 	| "passwordWrongInvalid_msg"
 	| "password_label"
 	| "paste_action"
+	| "pasteWithoutFormatting_action"
 	| "pathAlreadyExists_msg"
 	| "payCardContactBankError_msg"
 	| "payCardExpiredError_msg"
