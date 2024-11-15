@@ -14,11 +14,21 @@ pipeline {
 			defaultValue: false,
 			description: "Prepare a release version (doesn't publish to production, this is done manually)"
 		)
-		persistentText(
-			name: "releaseNotes",
-			defaultValue: "",
-			description: "release notes for this build"
-		 )
+        booleanParam(
+			name: 'WINDOWS',
+			defaultValue: false,
+			description: "Build Windows client."
+		)
+        booleanParam(
+			name: 'MAC',
+			defaultValue: false,
+			description: "Build Mac client."
+		)
+        booleanParam(
+			name: 'LINUX',
+			defaultValue: false,
+			description: "Build Linux client."
+		)
 	}
 
 	agent {
@@ -26,6 +36,17 @@ pipeline {
 	}
 
     stages {
+        stage("Checking params") {
+            steps {
+                script{
+                    if(!params.WINDOWS && !params.MAC && !params.LINUX) {
+                        currentBuild.result = 'ABORTED'
+                        error('No artifacts were selected.')
+                    }
+                }
+                echo "Params OKAY"
+            }
+        }
 		stage('Check Github') {
 			steps {
 				script {
@@ -73,6 +94,9 @@ pipeline {
 		stage('Build desktop clients') {
 			parallel {
 				stage('Windows') {
+				    when {
+				        expression { return params.WINDOWS }
+				    }
 					environment {
 						PATH = "${env.NODE_PATH}:${env.PATH}"
 					}
@@ -101,6 +125,9 @@ pipeline {
                 }
 
                 stage('Mac') {
+				    when {
+				        expression { return params.MAC }
+				    }
 					environment {
 						PATH = "${env.NODE_MAC_PATH}:${env.PATH}"
 					}
@@ -135,6 +162,9 @@ pipeline {
 				}
 
 				stage('Linux') {
+				    when {
+				        expression { return params.LINUX }
+				    }
 					agent {
 						dockerfile {
 							filename 'linux-build.dockerfile'
@@ -158,7 +188,7 @@ pipeline {
 			}
 		}
 
-		stage('Preparation for build deb and publish') {
+		stage('Preparation for sign clients and upload to Nexus') {
 			when { expression { return params.RELEASE } }
 			agent {
 				label 'master'
@@ -170,7 +200,7 @@ pipeline {
 				}
 			}
 		}
-		stage('Build deb and publish') {
+		stage('Sign clients and upload to Nexus') {
 			when { expression { return params.RELEASE } }
 			agent {
 				dockerfile {
@@ -181,95 +211,139 @@ pipeline {
 					args "--network host -v /run:/run:rw,z -v /opt/repository:/opt/repository:rw,z --device=${env.DEVICE_PATH}"
 				} // docker
 		    }
-		    environment { PATH = "${env.NODE_PATH}:${env.PATH}" }
-			steps {
-				sh 'npm ci'
-				sh 'npm run build-packages'
-				sh 'rm -rf ./build/*'
+		    environment {
+                PATH = "${env.NODE_PATH}:${env.PATH}"
+				UTIL = load "ci/jenkins-lib/util.groovy"
+            }
+		    stages {
+                // #FIXME rename
+                stage('build-packages') {
+                    steps {
+                        sh 'npm ci'
+                        sh 'npm run build-packages'
+                        sh 'rm -rf ./build/*'
+                    }
+                }
+                stage('Sign and upload') {
+                    parallel {
+                        stage('Window') {
+                            when {
+                                expression { return params.WINDOWS }
+                            }
+                            steps {
+                                dir('build') {
+                                    unstash 'win_installer'
+                                    unstash 'win_installer_test'
+                                }
 
-				dir('build') {
-					unstash 'linux_installer'
-					unstash 'mac_installer'
-					unstash 'win_installer'
-					unstash 'linux_installer_test'
-					unstash 'mac_installer_test'
-					unstash 'win_installer_test'
-				}
+                                withCredentials([string(credentialsId: 'HSM_USER_PIN', variable: 'PW')]) {
+                                    sh '''export HSM_USER_PIN=${PW}; node buildSrc/signDesktopClients.js'''
+                                }
 
-				withCredentials([string(credentialsId: 'HSM_USER_PIN', variable: 'PW')]) {
-					sh '''export HSM_USER_PIN=${PW}; node buildSrc/signDesktopClients.js'''
-				}
 
-				sh 'node buildSrc/publish.js desktop'
+                                script {
+                                    if (!fileExists("build/desktop/tutanota-desktop-win.exe")) {
+                                        currentBuild.result = 'ABORTED'
+                                        error("Unable to find file windows client")
+                                    }
+                                }
 
-				script { // create release draft
-					def desktopLinux = "build/desktop/tutanota-desktop-linux.AppImage"
-					def desktopWin = "build/desktop/tutanota-desktop-win.exe"
-					def desktopMac = "build/desktop/tutanota-desktop-mac.dmg"
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-win-test",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-win.exe",
+        //                                     fileExtension: 'exe'
+        //                             )
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-win",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-win.exe",
+        //                                     fileExtension: 'exe'
+        //                             )
+                            }
+                        }
+                        stage('Mac') {
+                            when {
+                                expression { return params.MAC }
+                            }
+                            steps {
+                                 dir('build') {
+                                     unstash 'mac_installer'
+                                     unstash 'mac_installer_test'
+                                 }
 
-					writeFile file: "notes.txt", text: params.releaseNotes
-					catchError(stageResult: 'UNSTABLE', buildResult: 'SUCCESS', message: 'Failed to create github release page for desktop') {
-						withCredentials([string(credentialsId: 'github-access-token', variable: 'GITHUB_TOKEN')]) {
-							sh """node buildSrc/createReleaseDraft.js --name '${VERSION} (Desktop)' \
-																   --tag 'tutanota-desktop-release-${VERSION}' \
-																   --uploadFile '${WORKSPACE}/${desktopLinux}' \
-																   --uploadFile '${WORKSPACE}/${desktopWin}' \
-																   --uploadFile '${WORKSPACE}/${desktopMac}' \
-																   --notes notes.txt"""
-						} // withCredentials
-					} // catchError
-					sh "rm notes.txt"
-				} // script release draft
+                                withCredentials([string(credentialsId: 'HSM_USER_PIN', variable: 'PW')]) {
+                                    sh '''export HSM_USER_PIN=${PW}; node buildSrc/signDesktopClients.js'''
+                                }
 
-				script { // upload to nexus
-					def util = load "ci/jenkins-lib/util.groovy"
 
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-linux-test",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-linux.AppImage",
-							fileExtension: 'AppImage'
-					)
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-win-test",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-win.exe",
-							fileExtension: 'exe'
-					)
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-mac-test",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-mac.dmg",
-							fileExtension: 'dmg'
-					)
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-linux",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-linux.AppImage",
-							fileExtension: 'AppImage'
-					)
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-win",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-win.exe",
-							fileExtension: 'exe'
-					)
-					util.publishToNexus(
-							groupId: "app",
-							artifactId: "desktop-mac",
-							version: "${VERSION}",
-							assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-mac.dmg",
-							fileExtension: 'dmg'
-					)
-				} // script upload to nexus
+                                script {
+                                    if (!fileExists("build/desktop/tutanota-desktop-mac.dmg")) {
+                                        currentBuild.result = 'ABORTED'
+                                        error("Unable to find file mac client")
+                                    }
+                                }
 
-			} // steps
-		} // stage build deb & publish
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-mac-test",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-mac.dmg",
+        //                                     fileExtension: 'dmg'
+        //                             )
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-mac",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-mac.dmg",
+        //                                     fileExtension: 'dmg'
+        //                             )
+                            }
+                        }
+                        stage('Linux') {
+                            when {
+                                expression { return params.LINUX }
+                            }
+                            steps {
+                                 dir('build') {
+                                     unstash 'linux_installer'
+                                     unstash 'linux_installer_test'
+                                 }
+
+                                withCredentials([string(credentialsId: 'HSM_USER_PIN', variable: 'PW')]) {
+                                    sh '''export HSM_USER_PIN=${PW}; node buildSrc/signDesktopClients.js'''
+                                }
+
+
+                                script {
+                                    if (!fileExists("build/desktop/tutanota-desktop-linux.AppImage")) {
+                                        currentBuild.result = 'ABORTED'
+                                        error("Unable to find file linux client")
+                                    }
+                                }
+
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-linux-test",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop-test/tutanota-desktop-test-linux.AppImage",
+        //                                     fileExtension: 'AppImage'
+        //                             )
+        //                             util.publishToNexus(
+        //                                     groupId: "app",
+        //                                     artifactId: "desktop-linux",
+        //                                     version: "${VERSION}",
+        //                                     assetFilePath: "${WORKSPACE}/build/desktop/tutanota-desktop-linux.AppImage",
+        //                                     fileExtension: 'AppImage'
+        //                             )
+                            }
+                        }
+                    } // parallel
+                } // Sign and upload
+            } // stages
+		} // stage sign clients and upload to Nexus
 	} // stages
 } // pipeline
 
