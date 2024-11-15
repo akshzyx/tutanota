@@ -1,8 +1,9 @@
+// use crate::importer::importable_mail::extend_mail_parser::NonRevHeaderValue;
 use crate::tuta_imap::client::types::ImapMail;
 use extend_mail_parser::MakeString;
 use mail_builder::headers::Header;
 use mail_parser::{
-	Address, ContentType, GetHeader, HeaderValue, Message, MessageParser, MessagePart,
+	Address, ContentType, GetHeader, HeaderName, HeaderValue, Message, MessageParser, MessagePart,
 	MessagePartId, MimeHeaders, PartType,
 };
 use regex::Regex;
@@ -12,6 +13,7 @@ use tutasdk::date::DateTime;
 use tutasdk::entities::generated::tutanota::{
 	EncryptedMailAddress, ImportMailData, ImportMailDataMailReference, MailAddress, Recipients,
 };
+
 pub mod extend_mail_parser;
 mod plain_text_to_html_converter;
 
@@ -59,7 +61,6 @@ pub(super) struct ImportableMailAttachment {
 	pub content_id: Option<String>,
 	pub content_type: String,
 	pub content: Vec<u8>,
-	is_inline: bool,
 }
 
 #[cfg_attr(test, derive(PartialEq, Debug))]
@@ -185,12 +186,8 @@ impl ImportableMail {
 				continue;
 			}
 			match &part.body {
-				PartType::Binary(binary_content) => {
-					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), false);
-				},
-
-				PartType::InlineBinary(binary_content) => {
-					Self::handle_binary(part, &mut attachments, binary_content.to_vec(), true);
+				PartType::Binary(binary_content) | PartType::InlineBinary(binary_content) => {
+					Self::handle_binary(part, &mut attachments, binary_content.to_vec());
 				},
 
 				PartType::Text(text) => {
@@ -198,12 +195,7 @@ impl ImportableMail {
 					{
 						Self::handle_plain_text(&mut email_body_as_html, text.as_ref());
 					} else {
-						Self::handle_binary(
-							part,
-							&mut attachments,
-							text.as_bytes().to_vec(),
-							false,
-						);
+						Self::handle_binary(part, &mut attachments, text.as_bytes().to_vec());
 					}
 				},
 
@@ -211,17 +203,13 @@ impl ImportableMail {
 					if !Self::is_attachment(&email_body_as_html, part) {
 						Self::handle_html_text(&mut email_body_as_html, html_text.as_ref())
 					} else {
-						Self::handle_binary(
-							part,
-							&mut attachments,
-							html_text.as_bytes().to_vec(),
-							false,
-						);
+						Self::handle_binary(part, &mut attachments, html_text.as_bytes().to_vec());
 					}
 				},
 
 				PartType::Message(attached_message) => {
-					let ignored_result = Self::handle_message(&mut attachments, attached_message);
+					let ignored_result =
+						Self::handle_message(&mut attachments, part, attached_message);
 				},
 
 				PartType::Multipart(multi_part_ids) => {
@@ -293,8 +281,8 @@ impl ImportableMail {
 	/// Creates a filename from the given filename that is valid on Linux and Windows. Invalid
 	/// characters are replaced by "_"
 	fn escape_filename(file_name: &str) -> Cow<str> {
-		let regex = Regex::new("[\\\\/:*?<>\"|]").unwrap();
-		regex.replace(file_name, "_")
+		let regex = Regex::new("[\\/:*?<>\"|]").unwrap();
+		regex.replace_all(file_name, "_")
 	}
 
 	fn get_suffix_from_content_type(content_type: &ContentType) -> &'static str {
@@ -409,7 +397,6 @@ impl ImportableMail {
 		part: &MessagePart,
 		attachments: &mut Vec<ImportableMailAttachment>,
 		content: Vec<u8>,
-		is_inline: bool,
 	) {
 		let content_id = part.content_id().map(ToString::to_string);
 		let filename = Self::get_filename(part, "unknown");
@@ -425,7 +412,6 @@ impl ImportableMail {
 			filename,
 			content_type,
 			content_id,
-			is_inline,
 			content,
 		};
 
@@ -434,25 +420,24 @@ impl ImportableMail {
 
 	fn handle_message(
 		attachments: &mut Vec<ImportableMailAttachment>,
+		parent_part: &MessagePart,
 		message: &Message,
 	) -> Result<(), MailParseError> {
-		let filename =
-			Self::get_filename(&message.parts[0], &message.subject().unwrap_or("unknown"));
-		let content_type = message
+		let filename = Self::get_filename(parent_part, &message.subject().unwrap_or("unknown"));
+
+		let nested_part = &message.parts[0];
+		let content =
+			message.raw_message[nested_part.offset_header..nested_part.offset_end].to_vec();
+		let content_type = parent_part
 			.content_type()
 			.ok_or_else(|| Self::default_content_type())
 			.map(MakeString::make_string)
 			.unwrap_or_default()
 			.to_string();
-
-		let nested_part = &message.parts[0];
-		let content =
-			message.raw_message[nested_part.offset_header..nested_part.offset_end].to_vec();
 		let attachment = ImportableMailAttachment {
 			filename,
 			content_type,
 			content,
-			is_inline: false,
 			content_id: None,
 		};
 		attachments.push(attachment);
@@ -469,7 +454,7 @@ impl ImportableMail {
 	}
 }
 
-impl From<ImportableMail> for (ImportMailData, Vec<ImportableMailAttachment>) {
+impl From<ImportableMail> for (ImportMailData) {
 	fn from(importable_mail: ImportableMail) -> Self {
 		let ImportableMail {
 			headers_string: headers,
@@ -516,41 +501,42 @@ impl From<ImportableMail> for (ImportMailData, Vec<ImportableMailAttachment>) {
 			})
 			.collect();
 
-		(
-			ImportMailData {
+		ImportMailData {
+			_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+			_finalIvs: HashMap::new(),
+			compressedHeaders: headers,
+			subject,
+			compressedBodyText: html_body_text,
+			differentEnvelopeSender: different_envelope_sender,
+			sender: from_addresses
+				.first()
+				.cloned()
+				.unwrap_or(MailContact::default().into()),
+			recipients: Recipients {
 				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-				_finalIvs: HashMap::new(),
-				compressedHeaders: headers,
-				subject,
-				compressedBodyText: html_body_text,
-				differentEnvelopeSender: different_envelope_sender,
-				sender: from_addresses
-					.first()
-					.cloned()
-					.unwrap_or(MailContact::default().into()),
-				recipients: Recipients {
-					_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
-					bccRecipients: bcc_addresses,
-					ccRecipients: cc_addresses,
-					toRecipients: to_addresses,
-				},
-				replyTos: reply_tos,
-				unread,
-				confidential: false,
-				method: ical_type as i64,
-				phishingStatus: if is_phishing { 1 } else { 0 },
-				replyType: reply_type as i64,
-				// if no date is provided, use UNIX_EPOCH (01.01.1970) as fallback
-				date: date.unwrap_or_default(),
-				state: mail_state as i64,
-				messageId: message_id,
-				inReplyTo: in_reply_to,
-				references,
-				importedAttachments: vec![],
+				bccRecipients: bcc_addresses,
+				ccRecipients: cc_addresses,
+				toRecipients: to_addresses,
 			},
-			attachments,
-		)
+			replyTos: reply_tos,
+			unread,
+			confidential: false,
+			method: ical_type as i64,
+			phishingStatus: if is_phishing { 1 } else { 0 },
+			replyType: reply_type as i64,
+			// if no date is provided, use UNIX_EPOCH (01.01.1970) as fallback
+			date: date.unwrap_or_default(),
+			state: mail_state as i64,
+			messageId: message_id,
+			inReplyTo: in_reply_to,
+			references,
+			importedAttachments: vec![],
+		}
 	}
+}
+
+fn get_parser() -> MessageParser {
+	MessageParser::new().header_text(HeaderName::Date)
 }
 
 impl TryFrom<ImapMail> for ImportableMail {
@@ -559,7 +545,7 @@ impl TryFrom<ImapMail> for ImportableMail {
 		let ImapMail { rfc822_full } = imap_mail;
 
 		// parse the full mime message
-		let imap_mail = MessageParser::new()
+		let imap_mail = get_parser()
 			.parse(rfc822_full.as_slice())
 			.ok_or(MailParseError::InvalidMimeMessage)?;
 

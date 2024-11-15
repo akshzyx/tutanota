@@ -1,7 +1,7 @@
 use crate::importer::file_reader::import_client::{FileImport, FileIterationError};
 use crate::importer::imap_reader::import_client::{ImapImport, ImapIterationError};
 use crate::importer::imap_reader::ImapImportConfig;
-use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment};
+use crate::importer::importable_mail::ImportableMail;
 use crate::reduce_to_chunks::reduce_to_chunks;
 use crate::tuta::credentials::TutaCredentials;
 use napi::bindgen_prelude::Error as NapiError;
@@ -158,8 +158,11 @@ impl Importer {
 			.encrypt_key(&new_mail_aes_256_key, Iv::generate(&self.randomizer_facade));
 
 		const MAX_REQUEST_SIZE: usize = 1024 * 1024 * 5;
-		let import_mail_data_and_attachments =
-			importable_mails.map(<(ImportMailData, Vec<ImportableMailAttachment>)>::from);
+		let import_mail_data_and_attachments = importable_mails.map(|mut m| {
+			let mut attachments = Vec::with_capacity(m.attachments.len());
+			attachments.append(&mut m.attachments);
+			(ImportMailData::from(m), attachments)
+		});
 		let import_chunks = reduce_to_chunks(
 			import_mail_data_and_attachments,
 			MAX_REQUEST_SIZE,
@@ -179,8 +182,6 @@ impl Importer {
 				let mut import_mail_data = import_mail_data;
 				let mut import_attachments = Vec::new();
 				for importable_mail_attachment in importable_mail_attachments {
-					let importable_mail_attachment =
-						importable_mail_attachment as ImportableMailAttachment;
 					let new_file_aes_256_key = GenericAesKey::from_bytes(
 						self.randomizer_facade
 							.generate_random_array::<{ tutasdk::crypto::aes::AES_256_KEY_SIZE }>()
@@ -197,7 +198,7 @@ impl Importer {
 							ArchiveDataType::Attachments,
 							&self.target_owner_group,
 							&new_file_aes_256_key,
-							importable_mail_attachment.content,
+							&importable_mail_attachment.content,
 						)
 						.await
 						.unwrap();

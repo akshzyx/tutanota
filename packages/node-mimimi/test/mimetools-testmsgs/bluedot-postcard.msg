@@ -35,7 +35,7 @@ Content-Transfer-Encoding: binary
 Content-Type: image/jpeg; name="bluedot.jpg"
 Content-Disposition: inline; filename="bluedot.jpg"
 Content-Transfer-Encoding: base64
-Content-Id: my-graphic
+Content-Id: <my-graphic>
 
 /9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL
 DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/

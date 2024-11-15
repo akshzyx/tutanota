@@ -7,7 +7,6 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::Read;
 use tutasdk::date::DateTime;
-use tutasdk::entities::generated::tutanota::ImportMailData;
 
 #[test]
 fn mime_tools_test_messages() {
@@ -67,34 +66,38 @@ fn mime_tools_test_messages() {
 			continue;
 		}
 
-		let parsed_message = parsed_message_result.unwrap();
-		let (mut importable_mail, importable_mail_attachments): (
-			ImportMailData,
-			Vec<ImportableMailAttachment>,
-		) = parsed_message.into();
-		let (mut expected_importable_mail, expected_mail_attachments): (
-			ImportMailData,
-			Vec<ImportableMailAttachment>,
-		) = expected_result.unwrap().into();
-
-		// importable_mail.attachments.clear();
-		// expected_importable_mail.attachments.clear();
+		let mut parsed_message = parsed_message_result.unwrap();
+		let mut expected_importable_mail: ImportableMail = expected_result.unwrap().into();
 
 		// we import raw headers and there is no need to compare them
-		importable_mail.compressedHeaders.clear();
-		expected_importable_mail.compressedHeaders.clear();
+		parsed_message.headers_string.clear();
+		expected_importable_mail.headers_string.clear();
 
 		// we don't cover date headers in server as well.
 		// .msg and -expected.json do not share same date seems like
-		importable_mail.date = DateTime::default();
-		expected_importable_mail.date = DateTime::default();
+		parsed_message.date = None;
+		expected_importable_mail.date = None;
 
 		// todo:
 		// we don't have different envelope sender in -expected.json
-		importable_mail.differentEnvelopeSender = None;
+		parsed_message.different_envelope_sender = None;
 
-		assert_eq!(importable_mail, expected_importable_mail);
-		assert_eq!(importable_mail_attachments, expected_mail_attachments);
+		for i in 0..std::cmp::max(
+			parsed_message.attachments.len(),
+			expected_importable_mail.attachments.len(),
+		) {
+			let a = &mut parsed_message.attachments[i];
+			let b = &mut expected_importable_mail.attachments[i];
+
+			assert!(a.content_type.starts_with(b.content_type.as_str()));
+			a.content_type.clear();
+			b.content_type.clear();
+		}
+		// since headers might have more attribute in actual message
+		// and in expected message we only have mime-type;charset
+		// we can make sure the first part ( i.e mime-type;charset ) is same
+
+		assert_eq!(parsed_message, expected_importable_mail);
 	}
 }
 
@@ -109,7 +112,7 @@ impl From<TestMailAddress> for MailContact {
 	}
 }
 
-impl From<ExpectedMessage> for (ImportMailData, Vec<ImportableMailAttachment>) {
+impl From<ExpectedMessage> for ImportableMail {
 	fn from(expected_message: ExpectedMessage) -> Self {
 		ImportableMail {
 			headers_string: expected_message.mail_headers,
@@ -125,17 +128,39 @@ impl From<ExpectedMessage> for (ImportMailData, Vec<ImportableMailAttachment>) {
 				.into_iter()
 				.map(|f| ImportableMailAttachment {
 					filename: f.name,
-					content_id: Some(f.content_id),
-					content_type: "".to_string(),
+					content_id: if f.content_id.is_empty() {
+						None
+					} else {
+						Some(f.content_id)
+					},
+					content_type: {
+						let mut content_type = String::new();
+
+						if !f.mime_type.is_empty() {
+							content_type.push_str(f.mime_type.as_str());
+						}
+						if let Some(charset) = f.charset {
+							content_type.push_str(";");
+							content_type.push_str(&format!("charset=\"{charset}\""));
+						}
+
+						content_type
+					},
 					content: base64_decode(f.data.as_bytes()).unwrap(),
-					is_inline: false,
 				})
 				.collect(),
 			date: expected_message
 				.sent_date
 				.map(|timestamp| DateTime::from_millis(timestamp as u64)),
 			different_envelope_sender: None,
-			from_addresses: vec![expected_message.sender.into()],
+			from_addresses: {
+				let sender = expected_message.sender;
+				if sender.name.is_empty() && sender.mail_address.is_empty() {
+					vec![]
+				} else {
+					vec![sender.into()]
+				}
+			},
 			to_addresses: expected_message
 				.to_recipients
 				.into_iter()
@@ -165,8 +190,6 @@ impl From<ExpectedMessage> for (ImportMailData, Vec<ImportableMailAttachment>) {
 			in_reply_to: expected_message.in_reply_to,
 			references: expected_message.references,
 		}
-		.try_into()
-		.unwrap()
 	}
 }
 
