@@ -68,8 +68,14 @@ fn mime_tools_test_messages() {
 		}
 
 		let parsed_message = parsed_message_result.unwrap();
-		let mut importable_mail: ImportMailData = parsed_message.into();
-		let mut expected_importable_mail: ImportMailData = expected_result.unwrap().into();
+		let (mut importable_mail, importable_mail_attachments): (
+			ImportMailData,
+			Vec<ImportableMailAttachment>,
+		) = parsed_message.into();
+		let (mut expected_importable_mail, expected_mail_attachments): (
+			ImportMailData,
+			Vec<ImportableMailAttachment>,
+		) = expected_result.unwrap().into();
 
 		// importable_mail.attachments.clear();
 		// expected_importable_mail.attachments.clear();
@@ -88,6 +94,7 @@ fn mime_tools_test_messages() {
 		importable_mail.differentEnvelopeSender = None;
 
 		assert_eq!(importable_mail, expected_importable_mail);
+		assert_eq!(importable_mail_attachments, expected_mail_attachments);
 	}
 }
 
@@ -102,7 +109,7 @@ impl From<TestMailAddress> for MailContact {
 	}
 }
 
-impl From<ExpectedMessage> for ImportMailData {
+impl From<ExpectedMessage> for (ImportMailData, Vec<ImportableMailAttachment>) {
 	fn from(expected_message: ExpectedMessage) -> Self {
 		ImportableMail {
 			headers_string: expected_message.mail_headers,
