@@ -6,3 +6,4 @@ pub mod logging;
 mod reduce_to_chunks;
 pub mod tuta;
 mod tuta_imap;
+mod stub_loggedin_sdk;
