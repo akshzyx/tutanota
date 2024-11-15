@@ -31,8 +31,8 @@ pub trait GetService: Service {
 
 #[async_trait::async_trait]
 pub trait PostService: Service {
-	type Input: Send;
-	type Output: Send;
+	type Input;
+	type Output;
 
 	#[allow(non_snake_case)]
 	async fn POST(

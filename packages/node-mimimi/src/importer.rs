@@ -3,7 +3,6 @@ use crate::importer::imap_reader::import_client::{ImapImport, ImapIterationError
 use crate::importer::imap_reader::ImapImportConfig;
 use crate::importer::importable_mail::{ImportableMail, ImportableMailAttachment};
 use crate::reduce_to_chunks::reduce_to_chunks;
-use crate::stub_loggedin_sdk::LoggedInSdk;
 use crate::tuta::credentials::TutaCredentials;
 use napi::bindgen_prelude::Error as NapiError;
 use std::sync::{Arc, Mutex};
@@ -20,7 +19,7 @@ use tutasdk::services::generated::tutanota::ImportMailService;
 use tutasdk::services::ExtraServiceParams;
 use tutasdk::tutanota_constants::ArchiveDataType;
 use tutasdk::GeneratedId;
-use tutasdk::{IdTupleGenerated, Sdk};
+use tutasdk::{IdTupleGenerated, LoggedInSdk, Sdk};
 
 pub type NapiTokioMutex<T> = napi::tokio::sync::Mutex<T>;
 
@@ -64,7 +63,7 @@ pub struct ImportStatus {
 
 struct Importer {
 	status: ImportStatus,
-	logged_in_sdk: Arc<dyn LoggedInSdk>,
+	logged_in_sdk: Arc<LoggedInSdk>,
 	target_owner_group: GeneratedId,
 	target_mail_folder: IdTupleGenerated,
 	import_source: Arc<Mutex<ImportSource>>,
@@ -142,7 +141,7 @@ impl Importer {
 		importable_mails: Iter,
 	) -> Result<Vec<IdTupleGenerated>, ()>
 	where
-		Iter: Iterator<Item = ImportableMail> + Send + Sync + 'static,
+		Iter: Iterator<Item = ImportableMail> + Send + 'static,
 	{
 		let new_mail_aes_256_key = GenericAesKey::from_bytes(
 			self.randomizer_facade
@@ -193,6 +192,7 @@ impl Importer {
 
 					let reference_tokens = self
 						.logged_in_sdk
+						.blob_facade()
 						.encrypt_and_upload(
 							ArchiveDataType::Attachments,
 							&self.target_owner_group,
@@ -202,6 +202,7 @@ impl Importer {
 						.await
 						.unwrap();
 
+					// todo: do we need to upload the ivs and how?
 					let enc_file_name = new_file_aes_256_key
 						.encrypt_data(
 							importable_mail_attachment.filename.as_ref(),
@@ -263,7 +264,8 @@ impl Importer {
 
 			let response = self
 				.logged_in_sdk
-				.post_service_executor::<ImportMailService>(import_mail_post_in, service_params)
+				.get_service_executor()
+				.post::<ImportMailService>(import_mail_post_in, service_params)
 				.await;
 
 			match response {
@@ -302,7 +304,7 @@ impl Importer {
 
 impl ImporterApi {
 	pub fn new(
-		logged_in_sdk: Arc<tutasdk::LoggedInSdk>,
+		logged_in_sdk: Arc<LoggedInSdk>,
 		target_owner_group: GeneratedId,
 		target_mail_folder: IdTupleGenerated,
 		import_source: Arc<Mutex<ImportSource>>,
@@ -358,9 +360,7 @@ impl ImporterApi {
 		))
 	}
 
-	async fn create_sdk(
-		tuta_credentials: TutaCredentials,
-	) -> Result<Arc<tutasdk::LoggedInSdk>, String> {
+	async fn create_sdk(tuta_credentials: TutaCredentials) -> Result<Arc<LoggedInSdk>, String> {
 		let rest_client = Arc::new(
 			NativeRestClient::try_new()
 				.map_err(|e| format!("Cannot build native rest client: {e}"))?,
@@ -433,10 +433,13 @@ impl ImporterApi {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::stub_loggedin_sdk::StubLoggedInSdk;
+	use crate::importer::imap_reader::{ImapCredentials, LoginMechanism};
+	use crate::tuta_imap::testing::GreenMailTestServer;
 	use mail_builder::MessageBuilder;
-
-	const TEST_EML_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
+	use tutasdk::entities::generated::tutanota::MailFolder;
+	use tutasdk::folder_system::MailSetKind;
+	use tutasdk::net::native_rest_client::NativeRestClient;
+	use tutasdk::Sdk;
 
 	fn sample_email(subject: String) -> String {
 		let email = MessageBuilder::new()
@@ -449,30 +452,152 @@ mod tests {
 		email
 	}
 
-	#[tokio::test]
-	async fn can_import_mail_with_single_attachment() {
-		let mut loggedin_sdk = StubLoggedInSdk::default();
+	async fn get_test_import_folder_id(
+		logged_in_sdk: &Arc<LoggedInSdk>,
+		kind: MailSetKind,
+	) -> MailFolder {
+		let mail_facade = logged_in_sdk.mail_facade();
+		let mailbox = mail_facade.load_user_mailbox().await.unwrap();
+		let folders = mail_facade
+			.load_folders_for_mailbox(&mailbox)
+			.await
+			.unwrap();
+		folders
+			.system_folder_by_type(kind)
+			.expect("inbox should exist")
+			.clone()
+	}
 
-		let mut importer = Importer {
-			status: Default::default(),
-			logged_in_sdk: Arc::new(loggedin_sdk),
-			target_owner_group: Default::default(),
-			target_mail_folder: IdTupleGenerated {
-				list_id: Default::default(),
-				element_id: Default::default(),
+	async fn init_imap_importer() -> (Importer, GreenMailTestServer) {
+		let importer_mail_address = "map-free@tutanota.de".to_string();
+		let logged_in_sdk = Sdk::new(
+			"http://localhost:9000".to_string(),
+			Arc::new(NativeRestClient::try_new().unwrap()),
+		)
+		.create_session(importer_mail_address.as_str(), "map")
+		.await
+		.unwrap();
+		let greenmail = GreenMailTestServer::new();
+		let imap_import_config = ImapImportConfig {
+			root_import_mail_folder_name: "/".to_string(),
+			credentials: ImapCredentials {
+				host: "127.0.0.1".to_string(),
+				port: greenmail.imaps_port.try_into().unwrap(),
+				login_mechanism: LoginMechanism::Plain {
+					username: "sug@example.org".to_string(),
+					password: "sug".to_string(),
+				},
 			},
-			import_source: Arc::new(Mutex::new(ImportSource::LocalFile {
-				fs_email_client: FileImport::new(vec![
-					TEST_EML_DIR.to_string() + "/attachment_sample.eml",
-				])
-				.unwrap(),
-			})),
-			randomizer_facade: RandomizerFacade::from_core(rand::rngs::OsRng),
 		};
 
-		let import_status = importer.continue_import().await.unwrap();
+		let import_source = Arc::new(Mutex::new(ImportSource::RemoteImap {
+			imap_import_client: ImapImport::new(imap_import_config),
+		}));
+		let randomizer_facade = RandomizerFacade::from_core(rand::rngs::OsRng);
+		let target_mail_folder = get_test_import_folder_id(&logged_in_sdk, MailSetKind::Archive)
+			.await
+			._id
+			.unwrap();
 
-		assert_eq!(import_status.imported_mails, 1);
-		assert_eq!(import_status.state, ImportState::Finished);
+		let target_owner_group = logged_in_sdk
+			.mail_facade()
+			.get_group_id_for_mail_address(importer_mail_address.as_str())
+			.await
+			.unwrap();
+
+		let importer = Importer {
+			target_owner_group,
+			target_mail_folder,
+			logged_in_sdk,
+			import_source,
+			randomizer_facade,
+			status: ImportStatus::default(),
+		};
+
+		(importer, greenmail)
+	}
+
+	pub async fn init_file_importer(source_paths: Vec<String>) -> Importer {
+		let logged_in_sdk = Sdk::new(
+			"http://localhost:9000".to_string(),
+			Arc::new(NativeRestClient::try_new().unwrap()),
+		)
+		.create_session("map-free@tutanota.de", "map")
+		.await
+		.unwrap();
+
+		let import_source = Arc::new(Mutex::new(ImportSource::LocalFile {
+			fs_email_client: FileImport::new(source_paths).unwrap(),
+		}));
+		let randomizer_facade = RandomizerFacade::from_core(rand::rngs::OsRng);
+		let target_mail_folder = get_test_import_folder_id(&logged_in_sdk, MailSetKind::Archive)
+			.await
+			._id
+			.unwrap();
+
+		let target_owner_group = logged_in_sdk
+			.mail_facade()
+			.get_group_id_for_mail_address("map-free@tutanota.de")
+			.await
+			.unwrap();
+
+		Importer {
+			status: ImportStatus::default(),
+			target_owner_group,
+			target_mail_folder,
+			logged_in_sdk,
+			import_source,
+			randomizer_facade,
+		}
+	}
+
+	#[tokio::test]
+	pub async fn import_multiple_from_imap_default_folder() {
+		let (mut importer, greenmail) = init_imap_importer().await;
+
+		let email_first = sample_email("Hello from imap 😀! -- Список.doc".to_string());
+		let email_second = sample_email("Second time: hello".to_string());
+		greenmail.store_mail("sug@example.org", email_first.as_str());
+		greenmail.store_mail("sug@example.org", email_second.as_str());
+
+		let import_res = importer.continue_import().await.map_err(|_| ());
+		assert_eq!(
+			Ok(ImportStatus {
+				state: ImportState::Finished,
+				imported_mails: 2,
+			}),
+			import_res
+		);
+	}
+
+	#[tokio::test]
+	pub async fn import_single_from_imap_default_folder() {
+		let (mut importer, greenmail) = init_imap_importer().await;
+
+		let email = sample_email("Single email".to_string());
+		greenmail.store_mail("sug@example.org", email.as_str());
+
+		let import_res = importer.continue_import().await.map_err(|_| ());
+		assert_eq!(
+			Ok(ImportStatus {
+				state: ImportState::Finished,
+				imported_mails: 1,
+			}),
+			import_res
+		);
+	}
+
+	#[tokio::test]
+	async fn can_import_single_eml_file() {
+		let mut importer = init_file_importer(vec!["./test/sample.eml".to_string()]).await;
+
+		let import_res = importer.continue_import().await.map_err(|_| ());
+		assert_eq!(
+			Ok(ImportStatus {
+				state: ImportState::Finished,
+				imported_mails: 1,
+			}),
+			import_res
+		);
 	}
 }
