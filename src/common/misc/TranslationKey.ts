@@ -791,6 +791,8 @@ export type TranslationKeyType =
 	| "keyManagement.fingerprint_label"
 	| "keyManagement.invalidFingerprint_msg"
 	| "keyManagement.publicKeyFingerprint_label"
+	| "keyManagement.publicKeyFingerprintQrInfo_msg"
+	| "keyManagement.publicKeyFingerprintTextInfo_msg"
 	| "keyManagement.publicKeyFingerprintInfo_msg"
 	| "keyManagement.showFingerprintAs_label"
 	| "keyManagement.unverifiedRecipient_msg"
