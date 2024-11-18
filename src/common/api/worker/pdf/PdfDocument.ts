@@ -50,13 +50,13 @@ const ADDRESS_FIELD_HEIGHT = 320
  */
 export class PdfDocument {
 	private readonly pdfWriter: PdfWriter
+	private readonly deflater: Deflater
 	private pageCount: number = 0
 	private textStream: string = ""
 	private graphicsStream: string = ""
 	private currentFont: PDF_FONTS = PDF_FONTS.REGULAR
 	private currentFontSize: number = 12
 	private pageList: PdfObjectRef[] = []
-	private deflater: Deflater
 
 	constructor(pdfWriter: PdfWriter) {
 		this.pdfWriter = pdfWriter
