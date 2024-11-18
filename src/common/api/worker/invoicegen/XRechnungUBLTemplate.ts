@@ -17,7 +17,7 @@ export default {
 			<cbc:ID>DE67250800200138040001</cbc:ID>
 			<cbc:Name>Tutao GmbH</cbc:Name>
 			<cac:FinancialInstitutionBranch>
-				<cbc:ID>{TODO: BIC}</cbc:ID>
+				<cbc:ID>DRESDEFF250</cbc:ID>
 			</cac:FinancialInstitutionBranch>
 		</cac:PayeeFinancialAccount>
 	</cac:PaymentMeans>
@@ -32,7 +32,7 @@ export default {
 	Seller: `
 <cac:AccountingSupplierParty>
 	<cac:Party>
-		<cbc:EndpointID schemeID="EM">buyer@tutao.de</cbc:EndpointID>
+		<cbc:EndpointID schemeID="EM">sales@tutao.de</cbc:EndpointID>
 		<cac:PartyName>
 			<cbc:Name>Tutao GmbH</cbc:Name>
 		</cac:PartyName>
@@ -73,12 +73,24 @@ export default {
 			<cac:Country>
 				<cbc:IdentificationCode>{buyerCountryCode}</cbc:IdentificationCode>
 			</cac:Country>
+			<cac:AddressLine>
+				<cbc:Line>{buyerAddressLine}</cbc:Line>
+			</cac:AddressLine>
 		</cac:PostalAddress>
+		{slotBuyerVatInfo}
 		<cac:PartyLegalEntity>
 			<cbc:RegistrationName>{buyerName}</cbc:RegistrationName>
 		</cac:PartyLegalEntity>
 	</cac:Party>
 </cac:AccountingCustomerParty>`,
+
+	BuyerVatInfo: `
+<cac:PartyTaxScheme>
+	<cbc:CompanyID>{buyerVatId}</cbc:CompanyID>
+	<cac:TaxScheme>
+		<cbc:ID>VAT</cbc:ID>
+	</cac:TaxScheme>
+</cac:PartyTaxScheme>`,
 
 	TaxTotal: `
 <cac:TaxTotal>
@@ -89,12 +101,15 @@ export default {
         <cac:TaxCategory>
             <cbc:ID>{vatType}</cbc:ID>
             <cbc:Percent>{vatPercent}</cbc:Percent>
+            {slotTaxExemptionReason}
             <cac:TaxScheme>
                 <cbc:ID>VAT</cbc:ID>
             </cac:TaxScheme>
         </cac:TaxCategory>
     </cac:TaxSubtotal>
 </cac:TaxTotal>`,
+
+	TaxExemptionReason: `<cbc:TaxExemptionReason>Umkehrung der Steuerschuldnerschaft</cbc:TaxExemptionReason>`,
 
 	DocumentTotals: `
 <cac:LegalMonetaryTotal>

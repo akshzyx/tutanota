@@ -292,8 +292,6 @@ export class PdfDocument {
 		const lastPageCannotFitRemainingRows = (entryCounter - entriesOnFirstPage) % ROWS_N_PAGE <= ROWS_FIRST_PAGE_MULTIPLE
 		const insufficientSpaceBelowTable = entryCounter == ROWS_FIRST_PAGE_MULTIPLE
 
-		console.log(`${entryCounter}`)
-		console.log(`${!lastPageCannotFitRemainingRows} || ${insufficientSpaceBelowTable}`)
 		if (!lastPageCannotFitRemainingRows || insufficientSpaceBelowTable) {
 			await this.addPage()
 			tableHeight = MARGIN_TOP

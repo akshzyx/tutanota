@@ -183,14 +183,13 @@ export class PdfInvoiceGenerator {
 	 * Additional blocks displayed below the table depending on invoice type, vat type and payment method
 	 */
 	renderAdditional() {
-		this.doc.changeFont(PDF_FONTS.REGULAR, 12)
+		this.doc.changeFont(PDF_FONTS.REGULAR, 11)
 
 		// No VAT / VAT not shown in table
 		switch (this.invoice.vatType) {
 			case VatType.ADD_VAT:
 			case VatType.VAT_INCLUDED_SHOWN:
 				break
-			// TODO: Why vat text if no vat?
 			case VatType.NO_VAT:
 			case VatType.NO_VAT_REVERSE_CHARGE:
 				if (this.invoice.vatIdNumber != null) {

@@ -18,11 +18,11 @@ type GlobalFetch = typeof global.fetch
  */
 export class PdfWriter {
 	private readonly textEncoder: TextEncoder
+	private readonly customFetch: GlobalFetch | undefined
+	private readonly deflater: Deflater
 	private byteLengthPosition = PDF_HEADER.byteLength
 	private pdfObjectList: PdfObject[] = []
 	private referenceTable: Map<string, PdfObject> = new Map<string, PdfObject>()
-	private customFetch: GlobalFetch | undefined
-	private deflater: Deflater
 	private cachedResources: ArrayBuffer[] | undefined
 
 	constructor(textEncoder: TextEncoder, customFetch: GlobalFetch | undefined) {

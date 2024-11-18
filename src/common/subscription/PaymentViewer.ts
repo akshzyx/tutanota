@@ -359,7 +359,9 @@ export class PaymentViewer implements UpdatableSettingsViewer {
 	private async doXrechnungInvoiceDownload(posting: CustomerAccountPosting) {
 		return showProgressDialog(
 			"pleaseWait_msg",
-			locator.customerFacade.generateXRechnungInvoice(neverNull(posting.invoiceNumber)).then((xInvoice) => locator.fileController.saveDataFile(xInvoice)),
+			locator.customerFacade
+				.generateXRechnungInvoice(neverNull(posting.invoiceNumber), neverNull(this.customer))
+				.then((xInvoice) => locator.fileController.saveDataFile(xInvoice)),
 		)
 	}
 

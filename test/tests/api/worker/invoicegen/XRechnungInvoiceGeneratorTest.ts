@@ -32,7 +32,7 @@ o.spec("XRechnungInvoiceGenerator", function () {
 				}),
 			],
 		})
-		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "NiiNii")
+		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "MyCusteromId", "test@tutao.de")
 		const xml = gen.generate()
 		fs.writeFileSync("/tmp/tuta_jp_invoice_noVat_2.xml", xml, { flag: "w" })
 	})
@@ -46,7 +46,7 @@ o.spec("XRechnungInvoiceGenerator", function () {
 			vatType: "1",
 			vatRate: "19",
 			vat: "11.40",
-			vatIdNumber: "4444_4444_4444_4444",
+			vatIdNumber: "DE12345678912345678912",
 			paymentMethod: "3",
 			items: [
 				createTestEntity(InvoiceDataItemTypeRef, {
@@ -75,22 +75,22 @@ o.spec("XRechnungInvoiceGenerator", function () {
 				}),
 			],
 		})
-		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "NiiNii")
+		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "MyCusteromId", "test@tutao.de")
 		const xml = gen.generate()
 		fs.writeFileSync("/tmp/tuta_de_paypal_addVat_3.xml", xml, { flag: "w" })
 	})
 
-	o("xrechnung generation for egypt noVatReverse creditCard addVat 1_items", async function () {
+	o("xrechnung generation for russia noVatReverse creditCard addVat 1_items", async function () {
 		const invoiceData = createTestEntity(InvoiceDataGetOutTypeRef, {
-			address: "Bernd Brot\nNeuschauerberg 56\n91488 Emskirchen",
-			country: "DE",
+			address: "CompanyRU\n194352, Санкт-Петербург\nСиреневый бульвар, д. 8, корп. 2, лит. А.",
+			country: "RU",
 			subTotal: "30.00",
-			grandTotal: "35.70",
+			grandTotal: "30.00",
 			vatType: "4",
-			vatRate: "19",
-			vat: "5.70",
-			vatIdNumber: "4444_4444_4444_4444",
-			paymentMethod: "2",
+			vatRate: "0",
+			vat: "0",
+			vatIdNumber: "RU1234567891",
+			paymentMethod: "1",
 			items: [
 				createTestEntity(InvoiceDataItemTypeRef, {
 					amount: "3",
@@ -102,9 +102,9 @@ o.spec("XRechnungInvoiceGenerator", function () {
 				}),
 			],
 		})
-		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "NiiNii")
+		const gen = new XRechnungInvoiceGenerator(invoiceData, "1978197819801981931", "MyCusteromId", "test@tutao.de")
 		const xml = gen.generate()
-		fs.writeFileSync("/tmp/tuta_de_paypal_addVat_3.xml", xml, { flag: "w" })
+		fs.writeFileSync("/tmp/tuta_ru_creditCard_noVatReverseCharge_3.xml", xml, { flag: "w" })
 	})
 
 	// TODO: How important is postal code parsing? Should extensive regex be used?

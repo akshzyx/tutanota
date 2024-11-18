@@ -10,8 +10,8 @@ export const enum VatType {
 
 export const enum InvoiceType {
 	INVOICE = "0",
-	CREDIT = "1",
-	REFERRAL_CREDIT = "2",
+	CREDIT = "1", // todo refers to existing invoice (381 not invoice type)
+	REFERRAL_CREDIT = "2", // todo refers to friend referral (83)
 }
 
 export const enum PaymentMethod {

@@ -7,19 +7,19 @@ const POSTAL_CODE_REGEX = new RegExp(/.[^\s]*\d.*/)
 const CITY_NAME_REGEX = new RegExp(/[^\d]*?(?=,|\s\d|$)/)
 
 const PaymentMethodTypeCodes: Record<PaymentMethod, NumberString> = Object.freeze({
-	"0": "31",
-	"1": "54",
-	"2": "59",
-	"3": "68",
-	"4": "68",
+	[PaymentMethod.INVOICE]: "31",
+	[PaymentMethod.CREDIT_CARD]: "54",
+	[PaymentMethod.SEPA_UNUSED]: "59",
+	[PaymentMethod.PAYPAL]: "68",
+	[PaymentMethod.ACCOUNT_BALANCE]: "97",
 })
 
 const VatTypeCategoryCodes: Record<VatType, string> = Object.freeze({
-	"0": "Z",
-	"1": "S",
-	"2": "S",
-	"3": "S",
-	"4": "AE",
+	[VatType.NO_VAT]: "E",
+	[VatType.ADD_VAT]: "S",
+	[VatType.VAT_INCLUDED_SHOWN]: "S",
+	[VatType.VAT_INCLUDED_HIDDEN]: "S",
+	[VatType.NO_VAT_REVERSE_CHARGE]: "AE",
 })
 
 /**
@@ -35,13 +35,16 @@ export class XRechnungInvoiceGenerator {
 	private readonly languageCode: "de" | "en" = "en"
 	private readonly invoiceNumber: string
 	private readonly customerId: string
+	private readonly buyerMailAddress: string
 	private invoice: InvoiceDataGetOut
+	private itemIndex: number = 0
 
-	constructor(invoice: InvoiceDataGetOut, invoiceNumber: string, customerId: string) {
+	constructor(invoice: InvoiceDataGetOut, invoiceNumber: string, customerId: string, buyerMailAddress: string) {
 		this.invoice = invoice
 		this.invoiceNumber = invoiceNumber
 		this.customerId = customerId
 		this.languageCode = countryUsesGerman(this.invoice.country)
+		this.buyerMailAddress = buyerMailAddress
 	}
 
 	/**
@@ -75,12 +78,26 @@ export class XRechnungInvoiceGenerator {
 	 */
 	private resolveBuyer(): string {
 		const addressParts = this.invoice.address.split("\n")
-		return XRechnungUBLTemplate.Buyer.replace("{buyerMail}", "TODO")
+		return XRechnungUBLTemplate.Buyer.replace("{buyerMail}", this.buyerMailAddress)
 			.replace("{buyerStreetName}", addressParts[1] ?? "STREET NAME UNKNOWN")
 			.replace("{buyerCityName}", extractCityName(addressParts[2] ?? ""))
 			.replace("{buyerPostalZone}", extractPostalCode(addressParts[2] ?? ""))
 			.replace("{buyerCountryCode}", this.invoice.country)
+			.replace("{buyerAddressLine}", this.invoice.address)
+			.replace("{slotBuyerVatInfo}", this.resolveBuyerVatInfo())
 			.replace("{buyerName}", addressParts[0] ?? "BUYER NAME UNKNOWN")
+	}
+
+	/**
+	 * Resolves tax info about the buyer (customer). Only resolved if the buyer has a vatIdNumber.
+	 * {buyerVatId} - Customer's vatIdNumber
+	 * @private
+	 */
+	private resolveBuyerVatInfo(): string {
+		if (this.invoice.vatIdNumber != null) {
+			return XRechnungUBLTemplate.BuyerVatInfo.replace("{buyerVatId}", this.invoice.vatIdNumber)
+		}
+		return ""
 	}
 
 	/**
@@ -127,8 +144,20 @@ export class XRechnungInvoiceGenerator {
 	private resolveTotalTax(): string {
 		return XRechnungUBLTemplate.TaxTotal.replace("{vatType}", VatTypeCategoryCodes[this.invoice.vatType as VatType])
 			.replace("{vatPercent}", this.invoice.vatRate)
+			.replace("{slotTaxExemptionReason}", this.resolveTaxExemptionReason())
 			.replace("{taxableAmount}", this.invoice.subTotal)
 			.replaceAll("{vatAmount}", this.invoice.vat)
+	}
+
+	/**
+	 * Resolves the textual reason why taxes are exempt. Only resolved if the vat type is reverse charge
+	 * @private
+	 */
+	private resolveTaxExemptionReason(): string {
+		if (this.invoice.vatType === VatType.NO_VAT_REVERSE_CHARGE) {
+			return XRechnungUBLTemplate.TaxExemptionReason
+		}
+		return ""
 	}
 
 	/**
@@ -172,14 +201,21 @@ export class XRechnungInvoiceGenerator {
 	 * @private
 	 */
 	private resolveInvoiceLine(invoiceItem: InvoiceDataItem): string {
-		return XRechnungUBLTemplate.InvoiceLine.replace("{invoiceLineQuantity}", invoiceItem.amount)
+		this.itemIndex++
+		return XRechnungUBLTemplate.InvoiceLine.replace("{invoiceLineId}", this.itemIndex.toString())
+			.replace("{invoiceLineQuantity}", invoiceItem.amount)
 			.replace("{invoiceLineTotal}", invoiceItem.totalPrice)
 			.replace("{invoiceLineStartDate}", formatDate(invoiceItem.startDate))
 			.replace("{invoiceLineEndDate}", formatDate(invoiceItem.endDate))
 			.replace("{invoiceLineItemName}", getInvoiceItemTypeName(invoiceItem.itemType, this.languageCode))
 			.replace("{invoiceLineItemVatType}", VatTypeCategoryCodes[this.invoice.vatType as VatType])
 			.replace("{invoiceLineItemVatPercent}", this.invoice.vatRate)
-			.replace("{invoiceLineItemPrice}", getInvoicePrice(invoiceItem.singlePrice))
+			.replace("{invoiceLineItemPrice}", getInvoiceItemPrice(invoiceItem))
+	}
+
+	private isReverseVat(): boolean {
+		//return this.invoice.vat === VatType.NO_VAT_REVERSE_CHARGE
+		return false
 	}
 }
 
@@ -191,19 +227,18 @@ function formatDate(date: Date | null): string {
 	if (date != null) {
 		return date.toISOString().split("T")[0]
 	}
-	return "DATE UNKNOWN"
+	return "No date given."
 }
 
 /**
- * Returns the price of an invoice with two decimal places, or "0.00" if the price is null
+ * Returns the price of an invoice with two decimal places, or "0" if the price is null
  * @param price
  */
-function getInvoicePrice(price: string | null): string {
-	if (price != null) {
-		return price
+function getInvoiceItemPrice(invoiceItem: InvoiceDataItem): string {
+	if (invoiceItem.singlePrice != null) {
+		return invoiceItem.singlePrice
 	}
-	// TODO: Is it 0 if null?
-	return "0"
+	return invoiceItem.totalPrice
 }
 
 export function extractPostalCode(addressLine: string): string {
@@ -211,7 +246,7 @@ export function extractPostalCode(addressLine: string): string {
 	if (match && match[0]) {
 		return match[0].trim()
 	}
-	return "POSTAL ZONE UNKNOWN"
+	return "Please refer to the full address line."
 }
 
 export function extractCityName(addressLine: string): string {
@@ -219,12 +254,9 @@ export function extractCityName(addressLine: string): string {
 	if (match && match[0]) {
 		return match[0].trim()
 	}
-	return "CITY NAME UNKNOWN"
+	return "Please refer to the full address line."
 }
 
-// TODO: special offers, gift cards, self-credit, invoice types?, discount
-// TODO: vat type mapping + payment method mapping (reverse charge)
-// TODO:
-// Item Price PriceAmount wants discount info?
-// Always commercial invoice?
-// ProfileID is billing?
+// TODO: gift cards, invoice types? ProfileID is billing?
+// todo: find 0.19 for credits
+// todo: test that any combi of pricing stuff gets done proper

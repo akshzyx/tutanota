@@ -30,12 +30,28 @@ o.spec("PdfInvoiceGenerator", function () {
 		fs.writeFileSync("/tmp/tuta_jp_invoice_noVat_3.pdf", pdf, { flag: "w" })
 	})
 
-	o("pdf rendering 100 entries", async function () {
+	o("pdf generation for russian invoice vatReverseCharge 4_items", async function () {
+		const renderInvoice = createTestEntity(InvoiceDataGetOutTypeRef, {
+			address: "CompanyRU\n194352, Санкт-Петербург\nСиреневый бульвар, д. 8, корп. 2, лит. А.",
+			country: "RU",
+			items: invoiceItemListMock(2),
+			vatType: "4",
+			vat: "0",
+			vatRate: "0",
+			vatIdNumber: "1111_2222_3333_4444",
+		})
+		const gen = new PdfInvoiceGenerator(pdfWriter, renderInvoice, "1978197819801981931", "NiiNii")
+		const pdf = await gen.generate()
+		fs.writeFileSync("/tmp/tuta_ru_invoice_vatReverse_4.pdf", pdf, { flag: "w" })
+	})
+
+	o("pdf rendering with 100 entries", async function () {
 		const invoiceData = createTestEntity(InvoiceDataGetOutTypeRef, {
 			address: "Marcel Davis",
 			country: "DE",
-			subTotal: "1.00",
-			grandTotal: "1.00",
+			vatRate: "0.19",
+			vatType: "1",
+			vat: "1",
 			items: invoiceItemListMock(100),
 		})
 
@@ -44,28 +60,15 @@ o.spec("PdfInvoiceGenerator", function () {
 		fs.writeFileSync("/tmp/tuta_100_entries.pdf", pdf, { flag: "w" })
 	})
 
-	o("Entries fit all on a single page but generate a new empty page", async function () {
+	o("pdf rendering with max entries to be put on first page", async function () {
 		const renderInvoice = createTestEntity(InvoiceDataGetOutTypeRef, {
-			address: "Altschauerberg 8\n91448 Emskirchen\nDeutschland",
+			address: "Peter Lustig",
 			country: "DE",
-			items: invoiceItemListMock(15),
+			items: invoiceItemListMock(13),
 		})
 		const gen = new PdfInvoiceGenerator(pdfWriter, renderInvoice, "1978197819801981931", "NiiNii")
 		const pdf = await gen.generate()
-		fs.writeFileSync("/tmp/tuta_normal_test.pdf", pdf, { flag: "w" })
-	})
-
-	o("VatId number is generated", async function () {
-		const renderInvoice = createTestEntity(InvoiceDataGetOutTypeRef, {
-			address: "BelgianStreet 5\n12345 Zellig\nBelgium",
-			country: "BE",
-			items: invoiceItemListMock(15),
-			vatType: "4",
-			vatIdNumber: "1111_2222_3333_4444",
-		})
-		const gen = new PdfInvoiceGenerator(pdfWriter, renderInvoice, "1978197819801981931", "NiiNii")
-		const pdf = await gen.generate()
-		// fs.writeFileSync("/tmp/normal_test.pdf", pdf, {flag:"w"})
+		fs.writeFileSync("/tmp/tuta_max_single_page_test.pdf", pdf, { flag: "w" })
 	})
 })
 

@@ -23,6 +23,7 @@ import {
 	createMembershipRemoveData,
 	createPaymentDataServicePutData,
 	CustomDomainReturn,
+	Customer,
 	CustomerInfoTypeRef,
 	CustomerServerProperties,
 	CustomerServerPropertiesTypeRef,
@@ -464,9 +465,10 @@ export class CustomerFacade {
 		}
 	}
 
-	async generateXRechnungInvoice(invoiceNumber: string): Promise<DataFile> {
+	async generateXRechnungInvoice(invoiceNumber: string, customer: Customer): Promise<DataFile> {
+		const customerInfo = await this.entityClient.load(CustomerInfoTypeRef, customer.customerInfo)
 		const invoiceData = await this.serviceExecutor.get(InvoiceDataService, createInvoiceDataGetIn({ invoiceNumber }))
-		const xRechnungGenerator = new XRechnungInvoiceGenerator(invoiceData, invoiceNumber, this.getCustomerId())
+		const xRechnungGenerator = new XRechnungInvoiceGenerator(invoiceData, invoiceNumber, this.getCustomerId(), customerInfo.registrationMailAddress)
 		const xRechnungFile = xRechnungGenerator.generate()
 		return {
 			_type: "DataFile",
