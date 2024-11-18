@@ -1,9 +1,9 @@
 import m, { Children, Vnode } from "mithril"
 import { ViewSlider } from "../../../common/gui/nav/ViewSlider.js"
 import { ColumnType, ViewColumn } from "../../../common/gui/base/ViewColumn"
-import { lang } from "../../../common/misc/LanguageViewModel"
+import { lang, TranslationText } from "../../../common/misc/LanguageViewModel"
 import { Dialog } from "../../../common/gui/base/Dialog"
-import { FeatureType, Keys, MailSetKind } from "../../../common/api/common/TutanotaConstants"
+import { FeatureType, HighestTierPlans, Keys, MailSetKind } from "../../../common/api/common/TutanotaConstants"
 import { AppHeaderAttrs, Header } from "../../../common/gui/Header.js"
 import type { Mail, MailFolder } from "../../../common/api/entities/tutanota/TypeRefs.js"
 import { noOp, ofClass } from "@tutao/tutanota-utils"
@@ -727,18 +727,20 @@ export class MailView extends BaseTopLevelView implements TopLevelView<MailViewA
 			return files.every((f) => f.name.endsWith(".eml") || f.name.endsWith(".mbox"))
 		}
 
+		// importing mails is currently only allowed on plan LEGEND and UNLIMITED
+		const currentPlanType = await locator.logins.getUserController().getPlanType()
+		const isHighestTierPlan = HighestTierPlans.includes(currentPlanType)
+
+		let importAction: { text: TranslationText; value: boolean } = {
+			text: "import_action",
+			value: true,
+		}
+		let attachFilesAction: { text: TranslationText; value: boolean } = {
+			text: "attachFiles_action",
+			value: false,
+		}
 		const willImport =
-			droppedOnlyMailFiles(dropData.files) &&
-			(await Dialog.choice("emlOrMboxInSharingFiles_msg", [
-				{
-					text: "import_action",
-					value: true,
-				},
-				{
-					text: "attachFiles_action",
-					value: false,
-				},
-			]))
+			isHighestTierPlan && droppedOnlyMailFiles(dropData.files) && (await Dialog.choice("emlOrMboxInSharingFiles_msg", [importAction, attachFilesAction]))
 
 		if (!willImport) {
 			await this.handleFileDrop(dropData)
@@ -753,7 +755,7 @@ export class MailView extends BaseTopLevelView implements TopLevelView<MailViewA
 					unencryptedCredentials,
 					mailFolder._ownerGroup,
 					mailFolder._id,
-					dropData.files.map((f) => window.nativeApp.getPathForFile(f)),
+					dropData.files.map((file) => window.nativeApp.getPathForFile(file)),
 				)
 			}
 		}

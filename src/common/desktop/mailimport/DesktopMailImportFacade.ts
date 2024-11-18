@@ -39,18 +39,17 @@ export class DesktopMailImportFacade implements MailImportFacade {
 
 	async importFromFiles(
 		apiUrl: string,
-		unencryptedTutaCredentials: UnencryptedCredentials,
+		unencTutaCredentials: UnencryptedCredentials,
 		targetOwnerGroup: string,
 		targetFolderId: IdTuple,
 		filePaths: Array<string>,
 	): Promise<string> {
 		const tutaCredentials: TutaCredentials = {
-			accessToken: unencryptedTutaCredentials?.accessToken,
-			credentialType:
-				unencryptedTutaCredentials.credentialInfo.type == CredentialType.Internal ? TutaCredentialType.Internal : TutaCredentialType.External,
-			encryptedPassphraseKey: unencryptedTutaCredentials.encryptedPassphraseKey ? Array.from(unencryptedTutaCredentials.encryptedPassphraseKey) : [],
-			login: unencryptedTutaCredentials.credentialInfo.login,
-			userId: unencryptedTutaCredentials.credentialInfo.userId,
+			accessToken: unencTutaCredentials?.accessToken,
+			credentialType: unencTutaCredentials.credentialInfo.type == CredentialType.Internal ? TutaCredentialType.Internal : TutaCredentialType.External,
+			encryptedPassphraseKey: unencTutaCredentials.encryptedPassphraseKey ? Array.from(unencTutaCredentials.encryptedPassphraseKey) : [],
+			login: unencTutaCredentials.credentialInfo.login,
+			userId: unencTutaCredentials.credentialInfo.userId,
 			apiUrl: apiUrl,
 			clientVersion: env.versionNumber,
 		}
