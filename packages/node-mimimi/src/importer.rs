@@ -589,8 +589,22 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn can_import_single_eml_file() {
+	async fn can_import_single_eml_file_without_attachment() {
 		let mut importer = init_file_importer(vec!["./test/sample.eml".to_string()]).await;
+
+		let import_res = importer.continue_import().await.map_err(|_| ());
+		assert_eq!(
+			Ok(ImportStatus {
+				state: ImportState::Finished,
+				imported_mails: 1,
+			}),
+			import_res
+		);
+	}
+
+	#[tokio::test]
+	async fn can_import_single_eml_file_with_attachment() {
+		let mut importer = init_file_importer(vec!["./test/attachment_sample.eml".to_string()]).await;
 
 		let import_res = importer.continue_import().await.map_err(|_| ());
 		assert_eq!(
