@@ -5,11 +5,13 @@ export function renderFingerprintAsText(fingerprint: string): string {
 	return fingerprint
 }
 
-export function renderFingerprintAsQrCode(fingerprint: string): string {
+export function renderFingerprintAsQrCode(selfMailAddress: string, selfFingerprint: string): string {
+	const payload = { mailAddress: selfMailAddress, fingerprint: selfFingerprint }
+
 	const qrCode = new QRCode({
 		height: 150,
 		width: 150,
-		content: fingerprint,
+		content: JSON.stringify(payload),
 		padding: 0,
 		xmlDeclaration: false,
 	})
