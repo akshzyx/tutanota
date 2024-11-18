@@ -21,7 +21,7 @@ thiserror = { version = "1.0.64" }
 # Default enable napi4 feature, see https://nodejs.org/api/n-api.html#node-api-version-matrix
 napi = { version = "2.16.12", default-features = false, features = ["napi9", "async", "tokio_rt"] }
 napi-derive = { version = "2.16.12", optional = true }
-mail-builder = { version = "0.3.2" }
+base64 = "0.22.1"
 
 # used for tuta-imap
 serde = { version = "1.0.210", features = ["derive"] }
@@ -43,6 +43,7 @@ base64 = "0.22.1"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 tuta-sdk = { path = "../../tuta-sdk/rust/sdk", features = ["net", "testing"] }
+mail-builder = { version = "0.3.2" }
 
 # tuta-imap
 j4rs = { version = "0.20.0" }
