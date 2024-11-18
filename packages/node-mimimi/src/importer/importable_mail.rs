@@ -8,7 +8,9 @@ use regex::Regex;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use tutasdk::date::DateTime;
-use tutasdk::entities::generated::tutanota;
+use tutasdk::entities::generated::tutanota::{
+	EncryptedMailAddress, ImportMailData, ImportMailDataMailReference, MailAddress, Recipients,
+};
 
 pub mod extend_mail_parser;
 mod plain_text_to_html_converter;
@@ -81,7 +83,7 @@ impl<'a> From<&mail_parser::Addr<'a>> for MailContact {
 	}
 }
 
-impl From<MailContact> for tutanota::MailAddress {
+impl From<MailContact> for MailAddress {
 	fn from(value: MailContact) -> Self {
 		Self {
 			_id: None,
@@ -475,8 +477,13 @@ impl ImportableMail {
 	}
 }
 
-impl From<ImportableMail> for tutanota::ImportMailData {
-	fn from(importable_mail: ImportableMail) -> Self {
+impl ImportableMail {
+	pub fn into_instance(
+		self: Self,
+		ownerEncSessionKey: Vec<u8>,
+		ownerKeyVersion: i64,
+	) -> ImportMailData {
+		#![allow(non_snake_case)]
 		let ImportableMail {
 			headers_string: headers,
 			subject,
@@ -496,12 +503,12 @@ impl From<ImportableMail> for tutanota::ImportMailData {
 			message_id,
 			in_reply_to,
 			references,
-			attachments,
-		} = importable_mail;
+			attachments: _attachments,
+		} = self;
 
 		let reply_tos = reply_to_addresses
 			.into_iter()
-			.map(|reply_to| tutanota::EncryptedMailAddress {
+			.map(|reply_to| EncryptedMailAddress {
 				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
 				_finalIvs: Default::default(),
 				name: reply_to.name,
@@ -509,27 +516,23 @@ impl From<ImportableMail> for tutanota::ImportMailData {
 			})
 			.collect();
 
-		let bcc_addresses = bcc_addresses
-			.into_iter()
-			.map(Into::into)
-			.collect::<Vec<_>>();
-		let cc_addresses = cc_addresses.into_iter().map(Into::into).collect::<Vec<_>>();
-		let to_addresses = to_addresses.into_iter().map(Into::into).collect::<Vec<_>>();
-		let from_addresses = from_addresses
-			.into_iter()
-			.map(Into::into)
-			.collect::<Vec<_>>();
+		let bcc_addresses = bcc_addresses.into_iter().map(Into::into).collect();
+		let cc_addresses = cc_addresses.into_iter().map(Into::into).collect();
+		let to_addresses = to_addresses.into_iter().map(Into::into).collect();
+		let from_addresses: Vec<MailAddress> = from_addresses.into_iter().map(Into::into).collect();
 
 		let references = references
 			.into_iter()
-			.map(|reference| tutanota::ImportMailDataMailReference {
+			.map(|reference| ImportMailDataMailReference {
 				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
 				reference,
 			})
 			.collect();
 
-		tutanota::ImportMailData {
-			_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
+		ImportMailData {
+			_format: 0,
+			ownerEncSessionKey,
+			ownerKeyVersion,
 			_finalIvs: HashMap::new(),
 			compressedHeaders: headers,
 			subject,
@@ -539,7 +542,7 @@ impl From<ImportableMail> for tutanota::ImportMailData {
 				.first()
 				.cloned()
 				.unwrap_or(MailContact::default().into()),
-			recipients: tutanota::Recipients {
+			recipients: Recipients {
 				_id: Some(tutasdk::CustomId::from_custom_string(FIXED_CUSTOM_ID)),
 				bccRecipients: bcc_addresses,
 				ccRecipients: cc_addresses,
@@ -558,6 +561,7 @@ impl From<ImportableMail> for tutanota::ImportMailData {
 			inReplyTo: in_reply_to,
 			references,
 			importedAttachments: vec![],
+			_errors: None,
 		}
 	}
 }

@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use tutasdk::crypto::aes::Iv;
 use tutasdk::crypto::key::GenericAesKey;
 use tutasdk::crypto::randomizer_facade::RandomizerFacade;
+use tutasdk::entities::generated::sys::StringWrapper;
 use tutasdk::entities::generated::tutanota::{
 	ImportAttachment, ImportMailData, ImportMailPostIn, NewImportAttachment,
 };
@@ -18,7 +19,7 @@ use tutasdk::net::native_rest_client::NativeRestClient;
 use tutasdk::services::generated::tutanota::ImportMailService;
 use tutasdk::services::ExtraServiceParams;
 use tutasdk::tutanota_constants::ArchiveDataType;
-use tutasdk::GeneratedId;
+use tutasdk::{ApiCallError, GeneratedId};
 use tutasdk::{IdTupleGenerated, LoggedInSdk, Sdk};
 
 pub type NapiTokioMutex<T> = napi::tokio::sync::Mutex<T>;
@@ -143,30 +144,37 @@ impl Importer {
 	where
 		Iter: Iterator<Item = ImportableMail> + Send + 'static,
 	{
-		let new_mail_aes_256_key = GenericAesKey::from_bytes(
-			self.randomizer_facade
-				.generate_random_array::<{ tutasdk::crypto::aes::AES_256_KEY_SIZE }>()
-				.as_slice(),
-		)
-		.unwrap();
 		let mail_group_key = self
 			.logged_in_sdk
 			.get_current_sym_group_key(&self.target_owner_group)
 			.await
 			.map_err(|_e| ())?;
-		let owner_enc_mail_session_key = mail_group_key
-			.encrypt_key(&new_mail_aes_256_key, Iv::generate(&self.randomizer_facade));
 
 		const MAX_REQUEST_SIZE: usize = 1024 * 1024 * 5;
 		let import_mail_data_and_attachments = importable_mails.map(|mut m| {
 			let mut attachments = Vec::with_capacity(m.attachments.len());
 			attachments.append(&mut m.attachments);
-			(ImportMailData::from(m), attachments)
+
+			let new_mail_aes_256_key = GenericAesKey::from_bytes(
+				self.randomizer_facade
+					.generate_random_array::<{ tutasdk::crypto::aes::AES_256_KEY_SIZE }>()
+					.as_slice(),
+			)
+			.unwrap();
+
+			let owner_enc_session_key = mail_group_key
+				.encrypt_key(&new_mail_aes_256_key, Iv::generate(&self.randomizer_facade));
+
+			(
+				m.into_instance(owner_enc_session_key.object, owner_enc_session_key.version),
+				new_mail_aes_256_key,
+				attachments,
+			)
 		});
 		let import_chunks = reduce_to_chunks(
 			import_mail_data_and_attachments,
 			MAX_REQUEST_SIZE,
-			Box::new(|(imd, a)| estimate_json_size(imd)),
+			Box::new(|(imd, key, attachment)| estimate_json_size(imd)),
 		);
 
 		let mut mails: Vec<IdTupleGenerated> = Vec::new();
@@ -177,8 +185,8 @@ impl Importer {
 		for imports in import_chunks {
 			let import_len = imports.len();
 
-			let mut imports_with_attachments = Vec::new();
-			for (import_mail_data, importable_mail_attachments) in imports.into_iter() {
+			let mut imports_with_attachments: Vec<(ImportMailData, GenericAesKey)> = Vec::new();
+			for (import_mail_data, key, importable_mail_attachments) in imports.into_iter() {
 				let mut import_mail_data = import_mail_data;
 				let mut import_attachments = Vec::new();
 				for importable_mail_attachment in importable_mail_attachments {
@@ -244,29 +252,32 @@ impl Importer {
 					import_attachments.push(import_attachment);
 				}
 				import_mail_data.importedAttachments = import_attachments;
-				imports_with_attachments.push(import_mail_data);
+				imports_with_attachments.push((import_mail_data, key));
 			}
 
+			let maybe_serialized_imports: Result<Vec<StringWrapper>, ApiCallError> =
+				imports_with_attachments
+					.into_iter()
+					.map(|(imd, key)| {
+						self.logged_in_sdk
+							.serialize_instance_to_json(imd, &key)
+							.map(|value| StringWrapper { _id: None, value })
+					})
+					.collect();
+
+			let serialized_imports = maybe_serialized_imports.map_err(|e| ())?;
+
 			let import_mail_post_in = ImportMailPostIn {
-				ownerEncSessionKey: owner_enc_mail_session_key.object.clone(),
 				ownerGroup: self.target_owner_group.clone(),
-				ownerKeyVersion: owner_enc_mail_session_key.version,
-				imports: imports_with_attachments,
+				encImports: serialized_imports,
 				targetMailFolder: self.target_mail_folder.clone(),
 				_format: 0,
-				_errors: None,
-				_finalIvs: Default::default(),
-			};
-
-			let service_params = ExtraServiceParams {
-				session_key: Some(new_mail_aes_256_key.clone()),
-				..Default::default()
 			};
 
 			let response = self
 				.logged_in_sdk
 				.get_service_executor()
-				.post::<ImportMailService>(import_mail_post_in, service_params)
+				.post::<ImportMailService>(import_mail_post_in, ExtraServiceParams::default())
 				.await;
 
 			match response {
